@@ -721,6 +721,64 @@ app.post('/api/candidate/logout', requireCandidate, (req, res) => {
   res.clearCookie('nudep_candidate', { httpOnly: true, secure: isProduction, sameSite: 'strict', path: '/' });
   res.json({ ok: true });
 });
+function candidateProfile(userId) {
+  return get(`SELECT p.id, p.full_name, p.email, p.phone, p.city, p.state, p.area, p.linkedin, p.resume_key, p.updated_at
+    FROM candidate_accounts a JOIN talent_profiles p ON p.id = a.profile_id WHERE a.id = ?`, [userId]);
+}
+function publicCandidateProfile(profile) {
+  return { full_name: profile.full_name, email: profile.email, phone: profile.phone, city: profile.city, state: profile.state, area: profile.area, linkedin: profile.linkedin || '', has_resume: !!profile.resume_key, updated_at: profile.updated_at };
+}
+function requireCandidateCsrf(req, res, next) {
+  if (req.get('x-candidate-csrf') !== req.candidateSession.csrf) return res.status(403).json({ error: 'Não foi possível validar a sessão. Atualize a página e tente novamente.' });
+  next();
+}
+app.get('/api/candidate/profile', requireCandidate, (req, res) => {
+  const profile = candidateProfile(req.candidateSession.userId);
+  if (!profile) return res.status(404).json({ error: 'Perfil não encontrado.' });
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ profile: publicCandidateProfile(profile) });
+});
+app.get('/api/candidate/profile/resume', requireCandidate, (req, res) => {
+  const profile = candidateProfile(req.candidateSession.userId);
+  const key = profile?.resume_key;
+  if (!key || !/^[a-f0-9-]{36}\.(pdf|docx)$/.test(key)) return res.status(404).json({ error: 'Currículo não encontrado.' });
+  const target = path.join(resumesPath, key);
+  if (!fs.existsSync(target)) return res.status(404).json({ error: 'Currículo não encontrado.' });
+  res.set('Cache-Control', 'private, no-store');
+  res.download(target, `curriculo${path.extname(key)}`);
+});
+app.put('/api/candidate/profile', requireCandidate, requireCandidateCsrf, upload.single('resume'), (req, res) => {
+  const profile = candidateProfile(req.candidateSession.userId);
+  if (!profile) { discardUpload(req.file); return res.status(404).json({ error: 'Perfil não encontrado.' }); }
+  if (req.file && !uploadLooksValid(req.file)) { discardUpload(req.file); return res.status(400).json({ error: 'Envie um currículo válido em PDF ou DOCX de até 5 MB.' }); }
+  const fullName = asText(req.body.full_name, 160);
+  const phone = asText(req.body.phone, 24);
+  const city = asText(req.body.city, 100);
+  const state = asText(req.body.state, 2).toUpperCase();
+  const area = asText(req.body.area, 100);
+  const linkedin = asText(req.body.linkedin, 500);
+  const errors = [];
+  if (!fullName) errors.push('nome completo');
+  if (!validPhone(phone)) errors.push('telefone');
+  if (!city) errors.push('cidade');
+  if (!/^[A-Z]{2}$/.test(state)) errors.push('estado (UF)');
+  if (!area) errors.push('área de interesse');
+  if (!validLinkedIn(linkedin)) errors.push('LinkedIn');
+  if (errors.length) { discardUpload(req.file); return res.status(400).json({ error: `Confira os seguintes campos: ${errors.join(', ')}.` }); }
+  const resumeKey = req.file ? path.basename(req.file.filename) : profile.resume_key;
+  try {
+    run('BEGIN');
+    run('UPDATE talent_profiles SET full_name = ?, phone = ?, city = ?, state = ?, area = ?, linkedin = ?, resume_key = ?, updated_at = ? WHERE id = ?', [fullName, phone, city, state, area, linkedin, resumeKey, nowIso(), profile.id]);
+    run('UPDATE candidate_accounts SET name = ? WHERE id = ?', [fullName, req.candidateSession.userId]);
+    run('COMMIT');
+  } catch (error) { try { run('ROLLBACK'); } catch {} discardUpload(req.file); throw error; }
+  // Não removemos nenhum dos arquivos se a gravação em disco falhar.
+  persistDatabase();
+  if (req.file && profile.resume_key && profile.resume_key !== resumeKey) discardUpload({ path: path.join(resumesPath, path.basename(profile.resume_key)) });
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ profile: publicCandidateProfile(candidateProfile(req.candidateSession.userId)) });
+});
+
 app.get('/api/candidate/applications', requireCandidate, (req, res) => {
   res.set('Cache-Control', 'no-store');
   const items = all(`SELECT a.id, a.status, a.created_at, j.title, j.slug FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.candidate_id = ? ORDER BY a.created_at DESC`, [req.candidateSession.userId]);
