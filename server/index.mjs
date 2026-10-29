@@ -27,7 +27,8 @@ const contentImagesPath = path.join(storagePath, 'content-images');
 const NOTICE_VERSION = '2026-10-v1';
 const app = express();
 const sessions = new Map();
-const sessionCleanup = setInterval(() => { const now = Date.now(); for (const [key, session] of sessions) if (session.expiresAt <= now) sessions.delete(key); }, 15 * 60 * 1000);
+const candidateSessions = new Map();
+const sessionCleanup = setInterval(() => { const now = Date.now(); for (const [key, session] of sessions) if (session.expiresAt <= now) sessions.delete(key); for (const [key, session] of candidateSessions) if (session.expiresAt <= now) candidateSessions.delete(key); }, 15 * 60 * 1000);
 sessionCleanup.unref();
 const isProduction = process.env.NODE_ENV === 'production';
 if (!configuredDataDir) {
@@ -288,6 +289,28 @@ function parseCookie(req, name) {
   const cookies = (req.headers.cookie || '').split(';');
   const entry = cookies.map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
   return entry ? decodeURIComponent(entry.slice(name.length + 1)) : '';
+}
+function getCandidateSession(req) {
+  const key = parseCookie(req, 'nudep_candidate');
+  const session = key && candidateSessions.get(key);
+  if (!session || session.expiresAt <= Date.now()) { if (key) candidateSessions.delete(key); return null; }
+  const account = get('SELECT id, email, name FROM candidate_accounts WHERE id = ?', [session.userId]);
+  if (!account) { candidateSessions.delete(key); return null; }
+  return { ...session, key, account };
+}
+function createCandidateSession(res, account) {
+  const key = crypto.randomBytes(32).toString('hex');
+  const csrf = crypto.randomBytes(32).toString('hex');
+  const maxAge = 12 * 60 * 60 * 1000;
+  candidateSessions.set(key, { userId: account.id, csrf, expiresAt: Date.now() + maxAge });
+  res.cookie('nudep_candidate', key, { httpOnly: true, secure: isProduction, sameSite: 'strict', path: '/', maxAge });
+  return csrf;
+}
+function requireCandidate(req, res, next) {
+  const session = getCandidateSession(req);
+  if (!session) return res.status(401).json({ error: 'Entre na área do candidato para continuar.' });
+  req.candidateSession = session;
+  next();
 }
 function getSession(req) {
   const key = parseCookie(req, 'im_admin');
@@ -677,6 +700,33 @@ app.get('/api/jobs/:slug', (req, res) => {
   res.json({ job: jobToPublic(row) });
 });
 
+app.get('/api/candidate/session', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const session = getCandidateSession(req);
+  res.json(session ? { authenticated: true, user: session.account, csrf: session.csrf } : { authenticated: false });
+});
+app.post('/api/candidate/login', loginLimiter, (req, res) => {
+  const email = asEmail(req.body?.email);
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const account = get('SELECT id, email, name, salt, password_hash FROM candidate_accounts WHERE email = ?', [email]);
+  if (!account || password.length > 256 || !verifyPassword(password, account.salt, account.password_hash)) return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+  const old = getCandidateSession(req); if (old) candidateSessions.delete(old.key);
+  const csrf = createCandidateSession(res, account);
+  res.set('Cache-Control', 'no-store');
+  res.json({ authenticated: true, user: { id: account.id, email: account.email, name: account.name }, csrf });
+});
+app.post('/api/candidate/logout', requireCandidate, (req, res) => {
+  if (req.get('x-candidate-csrf') !== req.candidateSession.csrf) return res.status(403).json({ error: 'Atualize a página e tente novamente.' });
+  candidateSessions.delete(req.candidateSession.key);
+  res.clearCookie('nudep_candidate', { httpOnly: true, secure: isProduction, sameSite: 'strict', path: '/' });
+  res.json({ ok: true });
+});
+app.get('/api/candidate/applications', requireCandidate, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const items = all(`SELECT a.id, a.status, a.created_at, j.title, j.slug FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.candidate_id = ? ORDER BY a.created_at DESC`, [req.candidateSession.userId]);
+  res.json({ items });
+});
+
 app.post('/api/applications', applicationLimiter, upload.single('resume'), async (req, res) => {
   if (!uploadLooksValid(req.file)) {
     discardUpload(req.file);
@@ -693,10 +743,12 @@ app.post('/api/applications', applicationLimiter, upload.single('resume'), async
     discardUpload(req.file);
     return res.status(400).json({ error: req.body.website ? 'Não foi possível validar o envio.' : 'Confira os campos obrigatórios, o link do LinkedIn e tente novamente. A oportunidade pode ter sido encerrada.' });
   }
+  const candidateSession = getCandidateSession(req);
+  if (candidateSession && (asText(req.body.candidate_csrf, 100) !== candidateSession.csrf || email !== candidateSession.account.email)) { discardUpload(req.file); return res.status(400).json({ error: 'Use o e-mail da sua conta e atualize a página antes de enviar.' }); }
   const id = uuid();
   const created = nowIso();
-  run(`INSERT INTO applications (id, job_id, full_name, email, phone, city, state, linkedin, cover_letter, answers, resume_key, status, privacy_notice_version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, job.id, fullName, email, phone, city, state, linkedin, asText(req.body.cover_letter, 4000), JSON.stringify({}), path.basename(req.file.filename), 'Candidatura recebida', NOTICE_VERSION, created, created]);
+  run(`INSERT INTO applications (id, job_id, full_name, email, phone, city, state, linkedin, cover_letter, answers, resume_key, status, privacy_notice_version, created_at, updated_at, candidate_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, job.id, fullName, email, phone, city, state, linkedin, asText(req.body.cover_letter, 4000), JSON.stringify({}), path.basename(req.file.filename), 'Candidatura recebida', NOTICE_VERSION, created, created, candidateSession?.userId || '']);
   persistDatabase();
   const ref = reference(id);
   if (isEmailConfigured()) {
@@ -725,15 +777,35 @@ app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', ma
   const state = asText(req.body.state, 2).toUpperCase();
   const area = asText(req.body.area, 100);
   const linkedin = asText(req.body.linkedin, 500);
-  if (req.body.website || !req.body.consent || !fullName || !validEmail(email) || !validPhone(phone) || !city || state.length !== 2 || !area || !validLinkedIn(linkedin)) {
+  if (req.body.website) {
     discardFiles();
-    return res.status(400).json({ error: req.body.website ? 'Não foi possível validar o envio.' : 'Preencha os campos obrigatórios e marque a autorização para participar do banco de talentos.' });
+    return res.status(400).json({ error: 'Não foi possível validar o envio.' });
   }
+  const invalidFields = [];
+  if (!fullName) invalidFields.push('nome completo');
+  if (!validEmail(email)) invalidFields.push('e-mail');
+  if (!validPhone(phone)) invalidFields.push('telefone');
+  if (!city) invalidFields.push('cidade');
+  if (!/^[A-Z]{2}$/.test(state)) invalidFields.push('estado (UF)');
+  if (!area) invalidFields.push('área de interesse');
+  if (!validLinkedIn(linkedin)) invalidFields.push('LinkedIn');
+  if (!asBoolean(req.body.consent)) invalidFields.push('autorização para cadastro');
+  if (invalidFields.length) {
+    discardFiles();
+    return res.status(400).json({ error: `Confira os seguintes campos: ${invalidFields.join(', ')}.` });
+  }
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+  if (!strongAdminPassword(password) || password.length > 256) { discardFiles(); return res.status(400).json({ error: 'A senha deve ter de 14 a 256 caracteres, com letras maiúsculas, minúsculas e números.' }); }
+  if (get('SELECT id FROM candidate_accounts WHERE email = ?', [email])) { discardFiles(); return res.status(409).json({ error: 'Já existe uma conta com este e-mail. Entre na área do candidato.' }); }
   const id = uuid();
   const created = nowIso();
   run(`INSERT INTO talent_profiles (id, full_name, email, phone, city, state, area, linkedin, resume_key, photo_key, consent_at, privacy_notice_version, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, fullName, email, phone, city, state, area, linkedin, path.basename(resume.filename), photo ? path.basename(photo.filename) : '', created, NOTICE_VERSION, created, created]);
+  const account = { id: uuid(), email, name: fullName };
+  const { salt, digest } = hashPassword(password);
+  run('INSERT INTO candidate_accounts (id, email, name, salt, password_hash, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [account.id, email, fullName, salt, digest, id, created]);
   persistDatabase();
+  const csrf = createCandidateSession(res, account);
   const ref = reference(id);
   if (isEmailConfigured()) {
     const variables = { nome: fullName, email, telefone: phone, area, cidade: city, estado: state, protocolo: ref };
@@ -741,7 +813,7 @@ app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', ma
     const notification = emailSettings().notification;
     if (notification) notify({ key: 'talent_team', to: notification, replyTo: email, variables });
   }
-  res.status(201).json({ ok: true, reference: ref, message: 'Seu perfil foi recebido. Você poderá solicitar a atualização ou remoção dos dados pelo canal de privacidade.' });
+  res.status(201).json({ ok: true, reference: ref, csrf, message: 'Seu perfil foi recebido. Você poderá solicitar a atualização ou remoção dos dados pelo canal de privacidade.' });
 });
 
 app.post('/api/leads', leadLimiter, async (req, res) => {

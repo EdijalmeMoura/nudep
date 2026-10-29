@@ -1610,3 +1610,23 @@ img { max-width: 100%; }
 .admin-quick-links a { display: flex; align-items: center; gap: 10px; padding: 16px; background: #fff; border: 1px solid #dfebf2; border-radius: 8px; color: #075c96; font-size: 12px; font-weight: 700; }
 .admin-quick-links a svg:last-child { margin-left: auto; }
 @media (max-width: 850px) { .admin-quick-links { grid-template-columns: repeat(2, 1fr); } }
+/* Feedback claro no cadastro de candidatos */
+.talent-required-note { color: #536e7d; font-size: 13px; margin: 0 0 18px; }
+.talent-field-error, .form-grid label > .talent-field-error { display: block; margin: 4px 0 0; color: #a12020; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.talent-form input[aria-invalid="true"] { border-color: #b92c2c; box-shadow: 0 0 0 2px rgba(185, 44, 44, .12); }
+.talent-form .upload-zone:has(input[aria-invalid="true"]) { border-color: #b92c2c; }
+.talent-form .privacy-ack { font-size: 13px; color: #294b5d; align-items: flex-start; padding: 12px; border-radius: 6px; background: #edf7fc; }
+.talent-form .privacy-ack input { width: 20px; height: 20px; margin: 0; }
+.talent-error-summary { margin: 0 0 18px; border-color: #e1aaaa; color: #8f1d1d; background: #fff4f4; font-size: 13px; }
+.candidate-login-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 55px; align-items: start; }
+.candidate-login { padding: 32px; }
+.candidate-login h2 { margin: 0 0 8px; }
+.candidate-login p, .candidate-dashboard p { color: #607887; }
+.candidate-login .button { margin-top: 22px; }
+.candidate-dashboard { padding: 28px; border: 1px solid #d8eaf3; border-radius: 10px; background: #fff; }
+.candidate-dashboard-heading, .candidate-application { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.candidate-application { border-top: 1px solid #e4eef3; padding: 18px 0; }
+.candidate-application p { margin: 4px 0; font-size: 12px; }
+.candidate-shortcuts { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 35px; }
+.candidate-shortcuts a { display: flex; align-items: center; gap: 10px; color: #0876b9; background: #edf7fc; padding: 16px 20px; border-radius: 8px; font-weight: 700; }
+@media (max-width: 760px) { .candidate-login-grid { grid-template-columns: 1fr; gap: 30px; } .candidate-dashboard-heading, .candidate-application { align-items: flex-start; flex-direction: column; } }
