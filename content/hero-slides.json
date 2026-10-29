@@ -1,0 +1,89 @@
+[
+  {
+    "slug": "pessoas-e-negocios",
+    "eyebrow": "ESTÁGIO & DESENVOLVIMENTO PROFISSIONAL",
+    "location": "RECIFE, PE",
+    "sideLabel": "ESTÁGIO E CAPACITAÇÃO / RECIFE",
+    "navigationLabel": "Talentos e oportunidades",
+    "title": [
+      {
+        "text": "Talentos de hoje."
+      },
+      {
+        "text": "Futuro para todos.",
+        "accent": true
+      }
+    ],
+    "text": "Conectamos estudantes, empresas e instituições de ensino para transformar oportunidades de estágio em desenvolvimento profissional.",
+    "primary": {
+      "to": "/solicitar-proposta",
+      "label": "Quero contratar estagiários"
+    },
+    "secondary": {
+      "to": "/area-do-candidato",
+      "label": "Sou candidato"
+    },
+    "footnote": "Conectando talentos a novas oportunidades.",
+    "imagePosition": "82% 52%",
+    "imageAlt": "Lideranças e profissionais colaborando em uma conversa de estratégia",
+    "imageUrl": "/images/hero-team.jpg"
+  },
+  {
+    "slug": "recrutamento",
+    "eyebrow": "PARA EMPRESAS",
+    "location": "ESTÁGIO E DESENVOLVIMENTO",
+    "sideLabel": "EMPRESAS / NUDEP",
+    "navigationLabel": "Para empresas",
+    "title": [
+      {
+        "text": "Novas ideias para"
+      },
+      {
+        "text": "sua empresa.",
+        "accent": true
+      }
+    ],
+    "text": "Aproxime sua empresa de estudantes em busca de oportunidades para aprender, contribuir e crescer.",
+    "primary": {
+      "to": "/empresas",
+      "label": "Cadastrar empresa"
+    },
+    "secondary": {
+      "to": "/solicitar-proposta",
+      "label": "Solicitar proposta"
+    },
+    "footnote": "Uma parceria para desenvolver talentos.",
+    "imagePosition": "82% 52%",
+    "imageAlt": "Recrutadora e profissional conversam durante uma entrevista de seleção",
+    "imageUrl": "/images/hero-recruitment.jpg"
+  },
+  {
+    "slug": "liderancas",
+    "eyebrow": "PARA ESTUDANTES",
+    "location": "SEU PRÓXIMO PASSO",
+    "sideLabel": "ESTUDANTES / NUDEP",
+    "navigationLabel": "Para estudantes",
+    "title": [
+      {
+        "text": "Seu futuro"
+      },
+      {
+        "text": "começa agora.",
+        "accent": true
+      }
+    ],
+    "text": "Encontre oportunidades de estágio e compartilhe seu perfil para dar o próximo passo na sua jornada profissional.",
+    "primary": {
+      "to": "/vagas",
+      "label": "Ver oportunidades"
+    },
+    "secondary": {
+      "to": "/curriculo",
+      "label": "Cadastrar currículo"
+    },
+    "footnote": "Desenvolver pessoas. Transformar futuros.",
+    "imagePosition": "82% 52%",
+    "imageAlt": "Lideranças trocam perspectivas em reunião de estratégia",
+    "imageUrl": "/images/hero-leadership.jpg"
+  }
+]

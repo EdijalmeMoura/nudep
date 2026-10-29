@@ -1,0 +1,31 @@
+import { useState, type FormEvent } from 'react';
+import { ArrowRight, ArrowUpRight, Building2, Check, GraduationCap, ShieldCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { PageIntro } from '../components/PageIntro';
+import { apiPost } from '../lib/api';
+import { companyContact } from '../lib/contact';
+import { usePageMeta } from '../hooks/usePageMeta';
+
+export function PartnerRegistration({ type }: { type: 'empresa' | 'instituicao' }) {
+  const institution = type === 'instituicao';
+  const label = institution ? 'instituição de ensino' : 'empresa';
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<{ reference: string } | null>(null);
+  usePageMeta(institution ? 'Cadastro de instituição de ensino' : 'Cadastro de empresa', `Envie os dados da sua ${label} para iniciar uma parceria com a NUDEP.`, institution ? '/instituicoes' : '/empresas');
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError('');
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const body = { ...data, service: institution ? 'Cadastro de instituição de ensino' : 'Cadastro de empresa', need: String(data.need || '').trim() || `Solicitação de cadastro de ${label} para parceria com a NUDEP.` };
+    setBusy(true);
+    try { setResult(await apiPost('/api/leads', body)); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível enviar seu cadastro. Tente novamente.'); }
+    finally { setBusy(false); }
+  }
+  return <main><PageIntro eyebrow={institution ? 'PARA INSTITUIÇÕES DE ENSINO' : 'PARA EMPRESAS'} title={institution ? <>Educação e oportunidades<br /><span className="intro-title-accent">caminham juntas.</span></> : <>Sua empresa e novos talentos.<br /><span className="intro-title-accent">Uma parceria para crescer.</span></>} text={institution ? 'Aproxime seus estudantes de oportunidades de estágio e desenvolvimento profissional com a NUDEP.' : 'Apresente sua empresa à NUDEP e converse com nossa equipe sobre oportunidades de estágio.'} current={institution ? 'Instituições de ensino' : 'Empresas'} />
+    <section className="contact-page section-pad"><div className="container contact-layout"><div className="contact-form-col">{result ? <div className="application-success"><span className="success-check"><Check size={25} /></span><span className="eyebrow">SOLICITAÇÃO RECEBIDA</span><h2>Obrigado pelo seu interesse!</h2><p>Recebemos os dados da sua {label}. A equipe NUDEP poderá entrar em contato para conversar sobre a parceria.</p><div className="application-reference"><span>Protocolo</span><strong>{result.reference}</strong></div><Link to="/" className="button button-primary">Voltar ao início <ArrowRight size={16} /></Link></div> : <form className="lead-form form-card" onSubmit={submit}>
+      <div className="form-section-title"><span className="form-number">01</span><div><h2>Cadastre sua {label}</h2><p>Envie os dados para iniciar seu atendimento. Este formulário não cria uma conta de acesso. Campos com * são obrigatórios.</p></div></div>
+      <div className="form-grid"><label className="field-full"><span>Nome da {label} <i>*</i></span><input name="company" autoComplete="organization" required maxLength={180} placeholder={institution ? 'Nome da instituição' : 'Nome da empresa'} /></label><label><span>Nome do responsável <i>*</i></span><input name="contact_name" autoComplete="name" required maxLength={160} placeholder="Nome completo" /></label><label><span>Cargo</span><input name="contact_role" maxLength={120} placeholder="Seu cargo" /></label><label><span>E-mail <i>*</i></span><input name="email" type="email" autoComplete="email" required maxLength={254} placeholder="voce@exemplo.com.br" /></label><label><span>Telefone <i>*</i></span><input name="phone" type="tel" autoComplete="tel" required maxLength={24} placeholder="(81) 99999-9999" /></label><label><span>Cidade <i>*</i></span><input name="city" autoComplete="address-level2" required maxLength={100} placeholder="Sua cidade" /></label><label><span>Estado (UF) <i>*</i></span><input name="state" autoComplete="address-level1" minLength={2} maxLength={2} required placeholder="PE" /></label><label className="field-full"><span>{institution ? 'Nível de ensino' : 'Segmento de atuação'}</span><input name="segment" maxLength={120} placeholder={institution ? 'Ex.: ensino superior, técnico ou médio' : 'Ex.: comércio, serviços ou indústria'} /></label><label className="field-full"><span>Como podemos ajudar?</span><textarea name="need" rows={4} minLength={15} maxLength={3000} placeholder={institution ? 'Conte um pouco sobre sua instituição e o interesse na parceria.' : 'Conte um pouco sobre sua empresa e suas oportunidades de estágio.'} /></label></div>
+      <div className="honeypot" aria-hidden="true"><label>Não preencher<input name="website" tabIndex={-1} autoComplete="off" /></label></div><div className="lead-form-privacy"><ShieldCheck size={16} /><span>Seus dados serão usados para responder à solicitação. Consulte o <Link to="/privacidade" target="_blank">aviso de privacidade</Link>.</span></div>{error && <div className="form-error" role="alert">{error}</div>}<div className="form-submit-row"><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Enviando…' : 'Enviar cadastro'} <ArrowUpRight size={17} /></button></div>
+    </form>}</div><aside className="contact-aside"><span className="contact-detail-icon">{institution ? <GraduationCap size={24} /> : <Building2 size={24} />}</span><span className="eyebrow eyebrow-light">PARCERIA NUDEP</span><h2>{institution ? 'Juntos pelo futuro dos estudantes.' : 'Oportunidades começam com uma boa parceria.'}</h2><p>{institution ? 'Nossa missão é aproximar estudantes do mercado de estágio e contribuir para seu desenvolvimento.' : 'Conectamos estudantes e empresas para criar oportunidades de aprendizado e desenvolvimento profissional.'}</p><div className="contact-aside-rule" /><p>Prefere falar diretamente com a equipe?</p><a href={companyContact.whatsappHref} className="button button-white" target="_blank" rel="noreferrer">Falar pelo WhatsApp <ArrowUpRight size={16} /></a></aside></div></section></main>;
+}
