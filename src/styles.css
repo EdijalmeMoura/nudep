@@ -1686,3 +1686,46 @@ img { max-width: 100%; }
 .candidate-privacy-form { padding: 30px; }.candidate-privacy-form > svg { color: #0876b9; margin-right: 10px; vertical-align: middle; }.candidate-privacy-form > p { color: #607887; }
 .privacy-detail-label textarea { width: 100%; padding: 12px; border: 1px solid #d8eaf3; border-radius: 6px; }.candidate-privacy-form form .button { margin-top: 18px; }
 @media (max-width: 600px) { .candidate-application-heading { flex-direction: column; gap: 8px; } .candidate-photo-editor, .candidate-privacy-form { padding: 22px; } }
+
+/* Identidade do painel e leitura do banco de talentos em telas menores. */
+.admin-sidebar-brand .brand-light .brand-logo-img { filter: brightness(0) invert(1); }
+.admin-sidebar-brand .brand-fallback { padding: 0; background: transparent; color: #fff; }
+.admin-sidebar-brand .brand-fallback small, .admin-sidebar-brand .brand-fallback strong::after { color: #fff; }
+@media (max-width: 760px) {
+  .admin-sidebar-brand .brand::before { content: none; }
+  .admin-sidebar-brand .brand-logo-img { display: block; width: 52px; height: auto; }
+  .admin-sidebar-brand .brand-fallback { display: block; }
+  .admin-sidebar-brand .brand-fallback strong { font-size: 11px; }
+  .admin-sidebar-brand .brand-fallback small { display: none; }
+  .talent-form-column, .talent-form, .talent-side { min-width: 0; }
+  .talent-form .upload-copy { min-width: 0; overflow-wrap: anywhere; }
+  .talent-form .consent-box > div { min-width: 0; }
+  .talent-form .form-grid input, .talent-form .form-grid select { font-size: 16px; }
+  .talent-side-card li, .talent-side-note, .talent-side-card > p { font-size: 12px; }
+  .admin-talent-table-card .admin-table { display: block; min-width: 0; }
+  .admin-talent-table-card thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .admin-talent-table-card tbody { display: grid; gap: 12px; padding: 12px; background: #f3f8fb; }
+  .admin-talent-table-card tr { display: block; padding: 12px; border: 1px solid #dcebf2; border-radius: 8px; background: #fff; }
+  .admin-talent-table-card .admin-table td, .admin-talent-table-card .admin-table td:first-child { display: block; padding: 8px 0; border-bottom: 1px solid #eef3f6; font-size: 12px; overflow-wrap: anywhere; }
+  .admin-talent-table-card .admin-table td:last-child { border-bottom: 0; }
+  .admin-talent-table-card td::before { content: attr(data-label); display: block; margin-bottom: 4px; color: #657f8c; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .admin-talent-table-card .admin-table td strong { font-size: 13px; }
+  .admin-talent-table-card .admin-table td small { max-width: none; font-size: 11px; }
+  .admin-talent-table-card .admin-profile-open, .admin-talent-table-card .admin-icon-danger, .admin-talent-table-card .admin-file-link { min-height: 40px; }
+}
+@media (max-width: 540px) {
+  .admin-sidebar-brand .brand-logo-img { width: 44px; }
+  .talent-form .form-submit-row { align-items: stretch; flex-direction: column; }
+  .talent-form .form-submit-row .button { justify-content: center; width: 100%; }
+  .talent-form .consent-box { padding: 12px; }
+  .application-success .button { width: 100%; justify-content: center; margin-top: 8px; }
+}
+
+/* Campo de apresentação da candidatura, tanto para visitantes quanto para candidatos autenticados. */
+.cover-letter-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-top: 20px; }
+.cover-letter-field > span { color: #294b5d; font-size: 13px; font-weight: 700; }
+.cover-letter-field > span small { margin-left: 5px; color: #718997; font-size: 11px; font-weight: 400; }
+.cover-letter-field textarea { display: block; width: 100%; min-height: 120px; padding: 14px 16px; border: 1px solid #cddfe8; border-radius: 7px; background: #f9fcfe; color: #23475a; font: inherit; font-size: 14px; line-height: 1.6; resize: vertical; transition: border-color .2s, box-shadow .2s; }
+.cover-letter-field textarea::placeholder { color: #8298a5; }
+.cover-letter-field textarea:focus { outline: none; border-color: #0876b9; box-shadow: 0 0 0 3px rgba(8, 118, 185, .14); }
+@media (max-width: 760px) { .cover-letter-field textarea { font-size: 16px; } }
