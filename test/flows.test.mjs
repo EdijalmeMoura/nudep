@@ -16,6 +16,8 @@ let child;
 let baseUrl;
 let cookie;
 let csrf;
+let smtpServer;
+const messages = [];
 
 before(async () => {
   process.env.DATA_DIR = dataDir;
@@ -25,11 +27,29 @@ before(async () => {
   const { salt, digest } = hashPassword(adminPassword);
   run('INSERT INTO admin_users (id, email, salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?)', [crypto.randomUUID(), 'admin@example.test', salt, digest, new Date().toISOString()]);
   persistDatabase();
+  smtpServer = createServer(socket => {
+    let buffer = ''; let data = false; let message = '';
+    socket.setEncoding('utf8'); socket.write('220 localhost ESMTP\r\n');
+    socket.on('data', chunk => {
+      buffer += chunk;
+      let end;
+      while ((end = buffer.indexOf('\r\n')) >= 0) {
+        const line = buffer.slice(0, end); buffer = buffer.slice(end + 2);
+        if (data) { if (line === '.') { messages.push(message); message = ''; data = false; socket.write('250 OK\r\n'); } else message += line + '\n'; continue; }
+        if (/^(EHLO|HELO)/i.test(line)) socket.write('250-localhost\r\n250 8BITMIME\r\n');
+        else if (/^DATA/i.test(line)) { data = true; socket.write('354 End with .\r\n'); }
+        else if (/^QUIT/i.test(line)) { socket.end('221 Bye\r\n'); }
+        else socket.write('250 OK\r\n');
+      }
+    });
+  });
+  await new Promise(resolve => smtpServer.listen(0, '127.0.0.1', resolve));
+  const smtpPort = smtpServer.address().port;
   port = await getFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
   child = spawn(process.execPath, ['server/index.mjs'], {
     cwd: root,
-    env: { ...process.env, NODE_ENV: 'production', DATA_DIR: dataDir, PORT: String(port), SITE_URL: 'https://impersonnel.com.br', APPLICATION_RETENTION_DAYS: '365', TALENT_RETENTION_DAYS: '365', LEAD_RETENTION_DAYS: '365', PRIVACY_REQUEST_RETENTION_DAYS: '365', AUDIT_RETENTION_DAYS: '365', ADMIN_BOOTSTRAP_EMAIL: '', ADMIN_BOOTSTRAP_PASSWORD_HASH: '', LEADS_NOTIFICATION_EMAIL: '', SMTP_HOST: '', EMAIL_FROM: '' },
+    env: { ...process.env, NODE_ENV: 'production', DATA_DIR: dataDir, PORT: String(port), SITE_URL: 'https://nudep.com.br', APPLICATION_RETENTION_DAYS: '365', TALENT_RETENTION_DAYS: '365', LEAD_RETENTION_DAYS: '365', PRIVACY_REQUEST_RETENTION_DAYS: '365', AUDIT_RETENTION_DAYS: '365', ADMIN_BOOTSTRAP_EMAIL: '', ADMIN_BOOTSTRAP_PASSWORD_HASH: '', LEADS_NOTIFICATION_EMAIL: '', SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort), SMTP_SECURE: 'false', SMTP_USER: '', SMTP_PASS: '', EMAIL_FROM: 'teste@example.test', FORM_RATE_LIMIT: '100', LOGIN_RATE_LIMIT: '100' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let logs = '';
@@ -52,6 +72,7 @@ after(async () => {
     child.kill('SIGTERM');
     await new Promise((resolve) => child.once('exit', resolve));
   }
+  await new Promise(resolve => smtpServer.close(resolve));
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -140,6 +161,7 @@ test('portal, applications, leads, talent, CMS and protected administration work
   const talentForm = new FormData();
   talentForm.set('full_name', 'Talento de teste'); talentForm.set('email', 'talent@example.test'); talentForm.set('phone', '+55 81 97777-0000');
   talentForm.set('city', 'Recife'); talentForm.set('state', 'PE'); talentForm.set('area', 'Recursos Humanos'); talentForm.set('linkedin', ''); talentForm.set('website', '');
+  talentForm.set('education_course', 'Administração'); talentForm.set('education_institution', 'Instituição teste'); talentForm.set('education_period', '4º período'); talentForm.set('education_shift', 'Noite'); talentForm.set('education_completion', '2028-12');
   talentForm.append('resume', new Blob(['%PDF-1.4\nIM Personnel talent test'], { type: 'application/pdf' }), 'cv.pdf');
   const withoutConsent = await fetch(`${baseUrl}/api/talent`, { method: 'POST', body: talentForm });
   assert.equal(withoutConsent.status, 400, 'talent bank requires explicit authorization');
@@ -150,8 +172,16 @@ test('portal, applications, leads, talent, CMS and protected administration work
   consentForm.append('photo', new Blob([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')], { type: 'image/png' }), 'foto.png');
   const registered = await fetch(`${baseUrl}/api/talent`, { method: 'POST', body: consentForm });
   assert.equal(registered.status, 201);
-  const candidateCookie = registered.headers.get('set-cookie').split(';')[0];
-  const candidateCsrf = (await registered.json()).csrf;
+  assert.equal((await registered.json()).verification_sent, true);
+  assert.equal((await postJson('/api/candidate/login', { email: 'talent@example.test', password: 'SenhaDeTeste12345' })).response.status, 403, 'e-mail precisa ser confirmado antes do login');
+  const verificationMail = messages.find(message => message.includes('/confirmar-email'));
+  const verificationToken = verificationMail.replace(/=\n/g, '').replace(/=3D/g, '=').match(/token=([a-f0-9]{64})/)[1];
+  assert.equal((await postJson('/api/candidate/verify-email', { token: verificationToken })).response.status, 200);
+  assert.equal((await postJson('/api/candidate/verify-email', { token: verificationToken })).response.status, 400, 'token é de uso único');
+  const firstLogin = await postJson('/api/candidate/login', { email: 'talent@example.test', password: 'SenhaDeTeste12345' });
+  assert.equal(firstLogin.response.status, 200);
+  const candidateCookie = firstLogin.response.headers.get('set-cookie').split(';')[0];
+  const candidateCsrf = firstLogin.data.csrf;
   assert.equal((await fetch(`${baseUrl}/api/candidate/applications`)).status, 401);
   const tracked = new FormData();
   for (const [key, value] of applicationForm.entries()) if (key !== 'resume') tracked.set(key, value);
@@ -165,11 +195,14 @@ test('portal, applications, leads, talent, CMS and protected administration work
   const beforeProfile = await fetch(`${baseUrl}/api/candidate/profile`, { headers: { cookie: candidateCookie } }).then(r => r.json());
   assert.equal(beforeProfile.profile.full_name, 'Talento de teste');
   assert.equal(beforeProfile.profile.email, 'talent@example.test');
+  assert.equal(beforeProfile.profile.education_course, 'Administração');
+  assert.equal(beforeProfile.profile.education_completion, '2028-12');
   assert.equal((await fetch(`${baseUrl}/api/candidate/profile/resume`, { headers: { cookie: candidateCookie } })).status, 200);
   const profileUpdate = new FormData();
   profileUpdate.set('full_name', 'Talento atualizado'); profileUpdate.set('phone', '(81) 97777-0000');
   profileUpdate.set('city', 'Olinda'); profileUpdate.set('state', 'PE'); profileUpdate.set('area', 'Tecnologia');
   profileUpdate.set('linkedin', ''); profileUpdate.set('email', 'outro@example.test');
+  profileUpdate.set('education_course', 'Engenharia'); profileUpdate.set('education_shift', 'Manhã'); profileUpdate.set('education_completion', '2029-06');
   profileUpdate.append('resume', new Blob(['%PDF-1.4\nNovo curriculo'], { type: 'application/pdf' }), 'novo.pdf');
   assert.equal((await fetch(`${baseUrl}/api/candidate/profile`, { method: 'PUT', headers: { cookie: candidateCookie }, body: profileUpdate })).status, 403, 'alterações requerem CSRF');
   const profileResponse = await fetch(`${baseUrl}/api/candidate/profile`, { method: 'PUT', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf }, body: profileUpdate });
@@ -177,20 +210,93 @@ test('portal, applications, leads, talent, CMS and protected administration work
   const updatedProfile = (await profileResponse.json()).profile;
   assert.equal(updatedProfile.full_name, 'Talento atualizado'); assert.equal(updatedProfile.city, 'Olinda');
   assert.equal(updatedProfile.email, 'talent@example.test', 'e-mail de acesso não é alterado');
+  assert.equal(updatedProfile.education_course, 'Engenharia');
+  assert.equal(updatedProfile.education_institution, 'Instituição teste', 'campos omitidos são preservados');
+  assert.equal(updatedProfile.education_completion, '2029-06');
   assert.match(await fetch(`${baseUrl}/api/candidate/profile/resume`, { headers: { cookie: candidateCookie } }).then(r => r.text()), /Novo curriculo/);
   const candidateAfterUpdate = await fetch(`${baseUrl}/api/admin/talent`, { headers }).then(r => r.json());
   assert.equal(candidateAfterUpdate.items[0].full_name, 'Talento atualizado', 'perfil atualizado aparece para o administrador');
+  assert.equal(candidateAfterUpdate.items[0].education_course, 'Engenharia');
+  assert.equal(candidateAfterUpdate.items[0].education_shift, 'Manhã');
   const invalidUpdate = new FormData();
   invalidUpdate.set('full_name', 'Alteração inválida'); invalidUpdate.set('phone', '(81) 97777-0000'); invalidUpdate.set('city', 'Olinda'); invalidUpdate.set('state', 'PE'); invalidUpdate.set('area', 'Tecnologia');
   invalidUpdate.append('resume', new Blob(['arquivo inválido'], { type: 'application/pdf' }), 'falso.pdf');
   assert.equal((await fetch(`${baseUrl}/api/candidate/profile`, { method: 'PUT', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf }, body: invalidUpdate })).status, 400);
   assert.match(await fetch(`${baseUrl}/api/candidate/profile/resume`, { headers: { cookie: candidateCookie } }).then(r => r.text()), /Novo curriculo/, 'falha não remove o arquivo anterior');
+  const badAcademic = new FormData();
+  badAcademic.set('full_name', 'Talento atualizado'); badAcademic.set('phone', '(81) 97777-0000'); badAcademic.set('city', 'Olinda'); badAcademic.set('state', 'PE'); badAcademic.set('area', 'Tecnologia');
+  badAcademic.set('education_shift', 'Turno inválido'); badAcademic.set('education_completion', '2029-13');
+  const badAcademicResponse = await fetch(`${baseUrl}/api/candidate/profile`, { method: 'PUT', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf }, body: badAcademic });
+  assert.equal(badAcademicResponse.status, 400);
+  assert.match((await badAcademicResponse.json()).error, /turno/);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile`, { headers: { cookie: candidateCookie } }).then(r => r.json())).profile.education_course, 'Engenharia');
+  const secondJob = await postAdmin('/api/admin/jobs', { title: 'Estágio de teste', hiring_organization: 'Empresa de teste', area: 'Tecnologia', city: 'Recife', state: 'PE', modality: 'Presencial', employment_type: 'Estágio', summary: 'Vaga para testar candidatura simplificada.', responsibilities: [], requirements: [], differentiators: [], benefits: [], published: true, featured: false, expires_at: '' });
+  assert.equal(secondJob.response.status, 201);
+  const simpleBody = JSON.stringify({ job_slug: secondJob.data.job.slug, acknowledged: true, cover_letter: 'Meu interesse nesta vaga.' });
+  const simpleRequest = (cookieValue, token, body = simpleBody) => fetch(`${baseUrl}/api/candidate/apply`, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookieValue ? { cookie: cookieValue } : {}), ...(token ? { 'x-candidate-csrf': token } : {}) }, body });
+  assert.equal((await simpleRequest('', '')).status, 401);
+  assert.equal((await simpleRequest(candidateCookie, '')).status, 403);
+  assert.equal((await simpleRequest(candidateCookie, candidateCsrf, JSON.stringify({ job_slug: secondJob.data.job.slug, acknowledged: false }))).status, 400);
+  assert.equal((await simpleRequest(candidateCookie, candidateCsrf, JSON.stringify({ job_slug: 'vaga-inexistente', acknowledged: true }))).status, 404);
+  assert.equal((await simpleRequest(candidateCookie, candidateCsrf)).status, 201);
+  assert.equal((await simpleRequest(candidateCookie, candidateCsrf)).status, 409, 'não duplica a candidatura');
+  const trackedBeforeStatus = await fetch(`${baseUrl}/api/candidate/applications`, { headers: { cookie: candidateCookie } }).then(r => r.json());
+  const simpleCandidateItem = trackedBeforeStatus.items.find(item => item.title === 'Estágio de teste');
+  assert.ok(simpleCandidateItem.updated_at); assert.equal(simpleCandidateItem.job_available, 1);
+  assert.equal((await putAdmin(`/api/admin/applications/${simpleCandidateItem.id}`, { status: 'Em análise', internal_notes: 'Interno' })).response.status, 200);
+  const trackedAfterStatus = await fetch(`${baseUrl}/api/candidate/applications`, { headers: { cookie: candidateCookie } }).then(r => r.json());
+  const statusItem = trackedAfterStatus.items.find(item => item.id === simpleCandidateItem.id);
+  assert.equal(statusItem.status, 'Em análise'); assert.ok(statusItem.updated_at); assert.equal(statusItem.internal_notes, undefined, 'notas internas não aparecem ao candidato');
+  const simpleAdmin = await fetch(`${baseUrl}/api/admin/applications`, { headers }).then(r => r.json());
+  const simpleRecord = simpleAdmin.items.find(item => item.job_title === 'Estágio de teste');
+  assert.equal(simpleRecord.full_name, 'Talento atualizado');
+  assert.equal(simpleRecord.email, 'talent@example.test');
+  assert.equal(simpleRecord.cover_letter, 'Meu interesse nesta vaga.');
+  assert.match(await fetch(`${baseUrl}/api/admin/files/${simpleRecord.resume_key}`, { headers }).then(r => r.text()), /Novo curriculo/);
+  const replaceAfterApply = new FormData();
+  replaceAfterApply.set('full_name', 'Nome alterado novamente'); replaceAfterApply.set('phone', '(81) 97777-0000'); replaceAfterApply.set('city', 'Olinda'); replaceAfterApply.set('state', 'PE'); replaceAfterApply.set('area', 'Tecnologia');
+  replaceAfterApply.append('resume', new Blob(['%PDF-1.4\nCurriculo posterior'], { type: 'application/pdf' }), 'posterior.pdf');
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile`, { method: 'PUT', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf }, body: replaceAfterApply })).status, 200);
+  assert.match(await fetch(`${baseUrl}/api/admin/files/${simpleRecord.resume_key}`, { headers }).then(r => r.text()), /Novo curriculo/, 'inscrição mantém cópia do currículo original');
+  assert.match(await fetch(`${baseUrl}/api/candidate/profile/resume`, { headers: { cookie: candidateCookie } }).then(r => r.text()), /Curriculo posterior/);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`)).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { headers: { cookie: candidateCookie } })).status, 200);
+  const photoForm = new FormData(); photoForm.append('photo', new Blob([Buffer.from('89504e470d0a1a0a0000000d494844520001', 'hex')], { type: 'image/png' }), 'nova.png');
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { method: 'PUT', headers: { cookie: candidateCookie }, body: photoForm })).status, 403);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { method: 'PUT', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf }, body: photoForm })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile`, { headers: { cookie: candidateCookie } }).then(r => r.json())).profile.has_photo, true);
+  const invalidPhoto = new FormData(); invalidPhoto.append('photo', new Blob(['invalid'], { type: 'image/png' }), 'invalid.png');
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { method: 'PUT', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf }, body: invalidPhoto })).status, 400);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { headers: { cookie: candidateCookie } })).status, 200, 'falha mantém a foto anterior');
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { method: 'DELETE', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf } })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { headers: { cookie: candidateCookie } })).status, 404);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile/photo`, { method: 'PUT', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf }, body: photoForm })).status, 200);
+  const privacyBody = JSON.stringify({ confirmed: true, details: 'Solicito análise.', email: 'outra@example.test' });
+  const privacyHeaders = { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf, 'content-type': 'application/json' };
+  assert.equal((await fetch(`${baseUrl}/api/candidate/privacy-request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: privacyBody })).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/privacy-request`, { method: 'POST', headers: { cookie: candidateCookie, 'content-type': 'application/json' }, body: privacyBody })).status, 403);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/privacy-request`, { method: 'POST', headers: privacyHeaders, body: JSON.stringify({ confirmed: false }) })).status, 400);
+  const privacySubmission = await fetch(`${baseUrl}/api/candidate/privacy-request`, { method: 'POST', headers: privacyHeaders, body: privacyBody });
+  assert.equal(privacySubmission.status, 201); assert.match((await privacySubmission.json()).reference, /^IM-/);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile`, { headers: { cookie: candidateCookie } })).status, 200, 'solicitação não exclui conta automaticamente');
+  const allPrivacy = await fetch(`${baseUrl}/api/admin/privacy-requests`, { headers }).then(r => r.json());
+  assert.ok(allPrivacy.items.some(item => item.email === 'talent@example.test' && item.request_type === 'Exclusão de dados'), 'solicitação usa identidade autenticada');
   assert.equal((await fetch(`${baseUrl}/api/candidate/logout`, { method: 'POST', headers: { cookie: candidateCookie } })).status, 403);
   assert.equal((await fetch(`${baseUrl}/api/candidate/logout`, { method: 'POST', headers: { cookie: candidateCookie, 'x-candidate-csrf': candidateCsrf } })).status, 200);
   const loginCandidate = await postJson('/api/candidate/login', { email: 'talent@example.test', password: 'SenhaDeTeste12345' });
   assert.equal(loginCandidate.response.status, 200);
   const loginCookie = loginCandidate.response.headers.get('set-cookie').split(';')[0];
-  assert.equal((await fetch(`${baseUrl}/api/candidate/applications`, { headers: { cookie: loginCookie } }).then(r => r.json())).items.length, 1);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/applications`, { headers: { cookie: loginCookie } }).then(r => r.json())).items.length, 2);
+  const recovery = await postJson('/api/candidate/forgot-password', { email: 'talent@example.test' });
+  const nonexistent = await postJson('/api/candidate/forgot-password', { email: 'naoexiste@example.test' });
+  assert.equal(recovery.response.status, 200); assert.deepEqual(recovery.data, nonexistent.data, 'resposta não revela se a conta existe');
+  const resetMail = messages.find(message => message.includes('/redefinir-senha'));
+  const resetToken = resetMail.replace(/=\n/g, '').replace(/=3D/g, '=').match(/token=([a-f0-9]{64})/)[1];
+  assert.equal((await postJson('/api/candidate/reset-password', { token: resetToken, password: 'SenhaNovaForte987' })).response.status, 200);
+  assert.equal((await postJson('/api/candidate/reset-password', { token: resetToken, password: 'SenhaNovaForte987' })).response.status, 400);
+  assert.equal((await fetch(`${baseUrl}/api/candidate/profile`, { headers: { cookie: loginCookie } })).status, 401, 'redefinir senha encerra sessões existentes');
+  assert.equal((await postJson('/api/candidate/login', { email: 'talent@example.test', password: 'SenhaDeTeste12345' })).response.status, 401);
+  assert.equal((await postJson('/api/candidate/login', { email: 'talent@example.test', password: 'SenhaNovaForte987' })).response.status, 200);
   const talents = await fetch(`${baseUrl}/api/admin/talent`, { headers }).then((response) => response.json());
   assert.equal(talents.items.length, 1);
   assert.ok(talents.items[0].consent_at);
@@ -207,7 +313,7 @@ test('portal, applications, leads, talent, CMS and protected administration work
   assert.equal((await deleteAdmin(`/api/admin/leads/${adminLeads.items[0].id}`)).status, 200);
 
   const privacyItems = await fetch(`${baseUrl}/api/admin/privacy-requests`, { headers }).then((response) => response.json());
-  assert.equal(privacyItems.items.length, 1);
+  assert.equal(privacyItems.items.length, 2);
   assert.equal((await putAdmin(`/api/admin/privacy-requests/${privacyItems.items[0].id}`, { status: 'Em atendimento', internal_notes: 'Validar identidade.' })).response.status, 200);
 
   const articleCreate = await postAdmin('/api/admin/articles', {

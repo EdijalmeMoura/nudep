@@ -194,6 +194,8 @@ const applicationLimiter = createFormLimiter();
 const talentLimiter = createFormLimiter();
 const leadLimiter = createFormLimiter();
 const privacyLimiter = createFormLimiter();
+const candidateMailLimiter = createFormLimiter();
+const candidateTokenLimiter = createFormLimiter();
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: loginLimit, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.' } });
 const initialAdminLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 4, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Muitas tentativas de configuração em pouco tempo. Aguarde alguns minutos e tente novamente.' } });
 const upload = multer({
@@ -294,8 +296,8 @@ function getCandidateSession(req) {
   const key = parseCookie(req, 'nudep_candidate');
   const session = key && candidateSessions.get(key);
   if (!session || session.expiresAt <= Date.now()) { if (key) candidateSessions.delete(key); return null; }
-  const account = get('SELECT id, email, name FROM candidate_accounts WHERE id = ?', [session.userId]);
-  if (!account) { candidateSessions.delete(key); return null; }
+  const account = get('SELECT id, email, name, email_verified_at FROM candidate_accounts WHERE id = ?', [session.userId]);
+  if (!account || !account.email_verified_at) { candidateSessions.delete(key); return null; }
   return { ...session, key, account };
 }
 function createCandidateSession(res, account) {
@@ -353,7 +355,7 @@ const escapeHtmlAttribute = (value) => String(value ?? '')
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   .replaceAll('"', '&quot;').replaceAll("'", '&#39;')
   .replace(/\s+/g, ' ').trim();
-const siteOrigin = () => (process.env.SITE_URL || 'https://impersonnel.com.br').replace(/\/$/, '');
+const siteOrigin = () => (process.env.SITE_URL || 'https://nudep.com.br').replace(/\/$/, '');
 const defaultShareImage = () => `${siteOrigin()}/images/hero-team.jpg`;
 
 function seoBlockFor(pathname) {
@@ -700,6 +702,82 @@ app.get('/api/jobs/:slug', (req, res) => {
   res.json({ job: jobToPublic(row) });
 });
 
+// Links usam somente SITE_URL configurada; tokens são aleatórios, de uso único e guardados apenas como hash.
+function candidateLinkOrigin() {
+  const configured = (process.env.SITE_URL || '').trim();
+  try {
+    const url = new URL(configured);
+    if (url.username || url.password || (isProduction ? url.protocol !== 'https:' : !['http:', 'https:'].includes(url.protocol))) return '';
+    return url.origin;
+  } catch { return ''; }
+}
+function candidateTokenHash(token) { return crypto.createHash('sha256').update(token).digest('hex'); }
+function invalidateCandidateSessions(userId) {
+  for (const [key, session] of candidateSessions) if (session.userId === userId) candidateSessions.delete(key);
+}
+async function sendCandidateLink(account, purpose) {
+  const origin = candidateLinkOrigin();
+  if (!isEmailConfigured() || !origin) return false;
+  const raw = crypto.randomBytes(32).toString('hex');
+  const digest = candidateTokenHash(raw);
+  const expires = new Date(Date.now() + (purpose === 'verify' ? 24 * 60 : 30) * 60 * 1000).toISOString();
+  run('DELETE FROM candidate_tokens WHERE expires_at <= ?', [nowIso()]);
+  run('DELETE FROM candidate_tokens WHERE candidate_id = ? AND purpose = ?', [account.id, purpose]);
+  run('INSERT INTO candidate_tokens (token_hash, candidate_id, purpose, expires_at) VALUES (?, ?, ?, ?)', [digest, account.id, purpose, expires]);
+  persistDatabase();
+  const route = purpose === 'verify' ? '/confirmar-email' : '/redefinir-senha';
+  const link = `${origin}${route}#token=${raw}`;
+  try {
+    const sent = await sendMessage({ to: account.email, subject: purpose === 'verify' ? 'Confirme seu e-mail na NUDEP' : 'Redefina sua senha na NUDEP', text: purpose === 'verify' ? `Olá! Para confirmar seu e-mail e acessar sua conta NUDEP, abra este link:\n\n${link}\n\nO link é válido por 24 horas e pode ser usado uma vez. Se você não solicitou este cadastro, ignore esta mensagem.` : `Olá! Para redefinir sua senha na NUDEP, abra este link:\n\n${link}\n\nO link é válido por 30 minutos e pode ser usado uma vez. Se você não solicitou, ignore esta mensagem.` });
+    if (!sent) throw new Error('Envio indisponível');
+    recordEmailEvent({ templateKey: `candidate_${purpose}`, kind: 'security', recipient: account.email, status: 'sent' });
+    return true;
+  } catch (error) {
+    run('DELETE FROM candidate_tokens WHERE token_hash = ?', [digest]); persistDatabase();
+    recordEmailEvent({ templateKey: `candidate_${purpose}`, kind: 'security', recipient: account.email, status: 'failed', detail: maskEmailError(error?.message || error).replace(/[a-f0-9]{64}/gi, '[redigido]') });
+    return false;
+  }
+}
+function findCandidateToken(token, purpose) {
+  if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
+  return get('SELECT t.candidate_id FROM candidate_tokens t JOIN candidate_accounts a ON a.id = t.candidate_id WHERE t.token_hash = ? AND t.purpose = ? AND t.expires_at > ?', [candidateTokenHash(token), purpose, nowIso()]);
+}
+app.post('/api/candidate/request-verification', candidateMailLimiter, async (req, res) => {
+  if (!isEmailConfigured() || !candidateLinkOrigin()) return res.status(503).json({ error: 'O envio de e-mail está indisponível. Entre em contato com a NUDEP.' });
+  const account = get('SELECT id, email, email_verified_at FROM candidate_accounts WHERE email = ?', [asEmail(req.body?.email)]);
+  if (account && !account.email_verified_at) await sendCandidateLink(account, 'verify');
+  res.json({ message: 'Se houver uma conta aguardando confirmação, enviaremos as instruções para o e-mail informado.' });
+});
+app.post('/api/candidate/verify-email', candidateTokenLimiter, (req, res) => {
+  const token = req.body?.token;
+  const row = findCandidateToken(token, 'verify');
+  if (!row) return res.status(400).json({ error: 'Este link é inválido, já foi usado ou expirou. Solicite outro.' });
+  run('BEGIN');
+  try { run('UPDATE candidate_accounts SET email_verified_at = ? WHERE id = ?', [nowIso(), row.candidate_id]); run('DELETE FROM candidate_tokens WHERE candidate_id = ? AND purpose = ?', [row.candidate_id, 'verify']); run('COMMIT'); }
+  catch (error) { run('ROLLBACK'); throw error; }
+  persistDatabase();
+  res.json({ message: 'E-mail confirmado. Agora você já pode entrar na sua conta.' });
+});
+app.post('/api/candidate/forgot-password', candidateMailLimiter, async (req, res) => {
+  if (!isEmailConfigured() || !candidateLinkOrigin()) return res.status(503).json({ error: 'O envio de e-mail está indisponível. Entre em contato com a NUDEP.' });
+  const account = get('SELECT id, email FROM candidate_accounts WHERE email = ?', [asEmail(req.body?.email)]);
+  if (account) await sendCandidateLink(account, 'reset');
+  res.json({ message: 'Se houver uma conta para este e-mail, enviaremos as instruções para redefinir a senha.' });
+});
+app.post('/api/candidate/reset-password', candidateTokenLimiter, (req, res) => {
+  const token = req.body?.token;
+  const password = req.body?.password;
+  if (!strongAdminPassword(password) || password.length > 256) return res.status(400).json({ error: 'A senha deve ter de 14 a 256 caracteres, com letras maiúsculas, minúsculas e números.' });
+  const row = findCandidateToken(token, 'reset');
+  if (!row) return res.status(400).json({ error: 'Este link é inválido, já foi usado ou expirou. Solicite outro.' });
+  const { salt, digest } = hashPassword(password);
+  run('BEGIN');
+  try { run('UPDATE candidate_accounts SET salt = ?, password_hash = ?, email_verified_at = ? WHERE id = ?', [salt, digest, nowIso(), row.candidate_id]); run('DELETE FROM candidate_tokens WHERE candidate_id = ?', [row.candidate_id]); run('COMMIT'); }
+  catch (error) { run('ROLLBACK'); throw error; }
+  persistDatabase(); invalidateCandidateSessions(row.candidate_id);
+  res.json({ message: 'Senha atualizada e e-mail confirmado. Entre novamente com sua nova senha.' });
+});
+
 app.get('/api/candidate/session', (req, res) => {
   res.set('Cache-Control', 'no-store');
   const session = getCandidateSession(req);
@@ -708,8 +786,9 @@ app.get('/api/candidate/session', (req, res) => {
 app.post('/api/candidate/login', loginLimiter, (req, res) => {
   const email = asEmail(req.body?.email);
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  const account = get('SELECT id, email, name, salt, password_hash FROM candidate_accounts WHERE email = ?', [email]);
+  const account = get('SELECT id, email, name, salt, password_hash, email_verified_at FROM candidate_accounts WHERE email = ?', [email]);
   if (!account || password.length > 256 || !verifyPassword(password, account.salt, account.password_hash)) return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+  if (!account.email_verified_at) return res.status(403).json({ error: 'Confirme seu e-mail antes de entrar. Solicite um novo link se precisar.' });
   const old = getCandidateSession(req); if (old) candidateSessions.delete(old.key);
   const csrf = createCandidateSession(res, account);
   res.set('Cache-Control', 'no-store');
@@ -721,12 +800,23 @@ app.post('/api/candidate/logout', requireCandidate, (req, res) => {
   res.clearCookie('nudep_candidate', { httpOnly: true, secure: isProduction, sameSite: 'strict', path: '/' });
   res.json({ ok: true });
 });
+const academicFields = ['education_course', 'education_institution', 'education_period', 'education_shift', 'education_completion'];
+function parseAcademic(body, existing = {}) {
+  const limits = { education_course: 160, education_institution: 180, education_period: 80, education_shift: 30, education_completion: 7 };
+  return Object.fromEntries(academicFields.map(key => [key, asText(body[key] === undefined ? existing[key] : body[key], limits[key])]));
+}
+function academicErrors(academic) {
+  const errors = [];
+  if (academic.education_shift && !['Manhã', 'Tarde', 'Noite', 'Integral', 'A distância', 'Outro'].includes(academic.education_shift)) errors.push('turno');
+  if (academic.education_completion && !/^\d{4}-(0[1-9]|1[0-2])$/.test(academic.education_completion)) errors.push('previsão de conclusão');
+  return errors;
+}
 function candidateProfile(userId) {
-  return get(`SELECT p.id, p.full_name, p.email, p.phone, p.city, p.state, p.area, p.linkedin, p.resume_key, p.updated_at
+  return get(`SELECT p.id, p.full_name, p.email, p.phone, p.city, p.state, p.area, p.linkedin, p.education_course, p.education_institution, p.education_period, p.education_shift, p.education_completion, p.resume_key, p.photo_key, p.updated_at
     FROM candidate_accounts a JOIN talent_profiles p ON p.id = a.profile_id WHERE a.id = ?`, [userId]);
 }
 function publicCandidateProfile(profile) {
-  return { full_name: profile.full_name, email: profile.email, phone: profile.phone, city: profile.city, state: profile.state, area: profile.area, linkedin: profile.linkedin || '', has_resume: !!profile.resume_key, updated_at: profile.updated_at };
+  return { full_name: profile.full_name, email: profile.email, phone: profile.phone, city: profile.city, state: profile.state, area: profile.area, linkedin: profile.linkedin || '', ...Object.fromEntries(academicFields.map(key => [key, profile[key] || ''])), has_resume: !!profile.resume_key, has_photo: !!profile.photo_key, updated_at: profile.updated_at };
 }
 function requireCandidateCsrf(req, res, next) {
   if (req.get('x-candidate-csrf') !== req.candidateSession.csrf) return res.status(403).json({ error: 'Não foi possível validar a sessão. Atualize a página e tente novamente.' });
@@ -747,6 +837,45 @@ app.get('/api/candidate/profile/resume', requireCandidate, (req, res) => {
   res.set('Cache-Control', 'private, no-store');
   res.download(target, `curriculo${path.extname(key)}`);
 });
+app.get('/api/candidate/profile/photo', requireCandidate, (req, res) => {
+  const profile = candidateProfile(req.candidateSession.userId);
+  const key = profile?.photo_key;
+  if (!key || !/^[a-f0-9-]{36}\.(jpg|png|webp)$/.test(key) || !fs.existsSync(path.join(resumesPath, key))) return res.status(404).json({ error: 'Foto não encontrada.' });
+  res.set('Cache-Control', 'private, no-store'); res.set('X-Content-Type-Options', 'nosniff');
+  res.sendFile(path.join(resumesPath, key));
+});
+app.put('/api/candidate/profile/photo', requireCandidate, requireCandidateCsrf, talentUpload.single('photo'), (req, res) => {
+  const profile = candidateProfile(req.candidateSession.userId);
+  if (!profile) { discardUpload(req.file); return res.status(404).json({ error: 'Perfil não encontrado.' }); }
+  if (!req.file || !imageLooksValid(req.file)) { discardUpload(req.file); return res.status(400).json({ error: 'Envie uma foto válida em JPG, PNG ou WebP de até 5 MB.' }); }
+  fs.chmodSync(req.file.path, 0o600);
+  run('UPDATE talent_profiles SET photo_key = ?, updated_at = ? WHERE id = ?', [path.basename(req.file.filename), nowIso(), profile.id]);
+  persistDatabase();
+  if (profile.photo_key) discardUpload({ path: path.join(resumesPath, path.basename(profile.photo_key)) });
+  res.json({ profile: publicCandidateProfile(candidateProfile(req.candidateSession.userId)) });
+});
+app.delete('/api/candidate/profile/photo', requireCandidate, requireCandidateCsrf, (req, res) => {
+  const profile = candidateProfile(req.candidateSession.userId);
+  if (!profile) return res.status(404).json({ error: 'Perfil não encontrado.' });
+  run('UPDATE talent_profiles SET photo_key = ?, updated_at = ? WHERE id = ?', ['', nowIso(), profile.id]);
+  persistDatabase();
+  if (profile.photo_key) discardUpload({ path: path.join(resumesPath, path.basename(profile.photo_key)) });
+  res.json({ profile: publicCandidateProfile(candidateProfile(req.candidateSession.userId)) });
+});
+app.post('/api/candidate/privacy-request', privacyLimiter, requireCandidate, requireCandidateCsrf, (req, res) => {
+  if (!asBoolean(req.body?.confirmed)) return res.status(400).json({ error: 'Confirme que deseja solicitar a exclusão.' });
+  const profile = candidateProfile(req.candidateSession.userId);
+  if (!profile) return res.status(404).json({ error: 'Perfil não encontrado.' });
+  const id = uuid(); const created = nowIso();
+  const type = 'Exclusão de dados';
+  const details = `Solicitação de exclusão da conta e dados enviada pela área autenticada do candidato. ${asText(req.body?.details, 1600)}`.trim();
+  run('INSERT INTO privacy_requests (id, full_name, email, request_type, details, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, profile.full_name, profile.email, type, details, created, created]);
+  persistDatabase();
+  const ref = reference(id);
+  if (isEmailConfigured()) notify({ key: 'privacy_customer', to: profile.email, variables: { nome: profile.full_name, email: profile.email, tipo: type, protocolo: ref } });
+  res.status(201).json({ reference: ref, message: 'Sua solicitação foi registrada para análise. A conta e os dados não são excluídos automaticamente.' });
+});
+
 app.put('/api/candidate/profile', requireCandidate, requireCandidateCsrf, upload.single('resume'), (req, res) => {
   const profile = candidateProfile(req.candidateSession.userId);
   if (!profile) { discardUpload(req.file); return res.status(404).json({ error: 'Perfil não encontrado.' }); }
@@ -757,7 +886,8 @@ app.put('/api/candidate/profile', requireCandidate, requireCandidateCsrf, upload
   const state = asText(req.body.state, 2).toUpperCase();
   const area = asText(req.body.area, 100);
   const linkedin = asText(req.body.linkedin, 500);
-  const errors = [];
+  const academic = parseAcademic(req.body, profile);
+  const errors = academicErrors(academic);
   if (!fullName) errors.push('nome completo');
   if (!validPhone(phone)) errors.push('telefone');
   if (!city) errors.push('cidade');
@@ -768,7 +898,7 @@ app.put('/api/candidate/profile', requireCandidate, requireCandidateCsrf, upload
   const resumeKey = req.file ? path.basename(req.file.filename) : profile.resume_key;
   try {
     run('BEGIN');
-    run('UPDATE talent_profiles SET full_name = ?, phone = ?, city = ?, state = ?, area = ?, linkedin = ?, resume_key = ?, updated_at = ? WHERE id = ?', [fullName, phone, city, state, area, linkedin, resumeKey, nowIso(), profile.id]);
+    run('UPDATE talent_profiles SET full_name = ?, phone = ?, city = ?, state = ?, area = ?, linkedin = ?, education_course = ?, education_institution = ?, education_period = ?, education_shift = ?, education_completion = ?, resume_key = ?, updated_at = ? WHERE id = ?', [fullName, phone, city, state, area, linkedin, ...academicFields.map(key => academic[key]), resumeKey, nowIso(), profile.id]);
     run('UPDATE candidate_accounts SET name = ? WHERE id = ?', [fullName, req.candidateSession.userId]);
     run('COMMIT');
   } catch (error) { try { run('ROLLBACK'); } catch {} discardUpload(req.file); throw error; }
@@ -781,8 +911,42 @@ app.put('/api/candidate/profile', requireCandidate, requireCandidateCsrf, upload
 
 app.get('/api/candidate/applications', requireCandidate, (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const items = all(`SELECT a.id, a.status, a.created_at, j.title, j.slug FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.candidate_id = ? ORDER BY a.created_at DESC`, [req.candidateSession.userId]);
+  const items = all(`SELECT a.id, a.status, a.created_at, a.updated_at, j.title, j.slug, CASE WHEN j.published = 1 AND (j.expires_at IS NULL OR j.expires_at >= ?) THEN 1 ELSE 0 END AS job_available FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.candidate_id = ? ORDER BY a.created_at DESC`, [activeDateFilter(), req.candidateSession.userId]);
   res.json({ items });
+});
+
+// Candidatura autenticada usa somente dados da própria conta e guarda uma cópia
+// independente do currículo, para que alterações futuras não modifiquem a inscrição.
+app.post('/api/candidate/apply', applicationLimiter, requireCandidate, requireCandidateCsrf, (req, res) => {
+  if (!asBoolean(req.body?.acknowledged)) return res.status(400).json({ error: 'Confirme que leu o aviso de privacidade antes de enviar.' });
+  const profile = candidateProfile(req.candidateSession.userId);
+  const job = get('SELECT id, slug, title FROM jobs WHERE slug = ? AND published = 1 AND (expires_at IS NULL OR expires_at >= ?)', [asText(req.body?.job_slug, 110), activeDateFilter()]);
+  if (!job) return res.status(404).json({ error: 'Esta vaga não está disponível para candidatura.' });
+  if (!profile || !profile.full_name || !validEmail(profile.email) || !validPhone(profile.phone) || !profile.city || !/^[A-Z]{2}$/.test(profile.state) || !validLinkedIn(profile.linkedin || '')) return res.status(400).json({ error: 'Atualize os dados obrigatórios do seu perfil antes de se candidatar.' });
+  if (get('SELECT id FROM applications WHERE candidate_id = ? AND job_id = ? LIMIT 1', [req.candidateSession.userId, job.id])) return res.status(409).json({ error: 'Você já enviou uma candidatura para esta vaga. Consulte suas candidaturas na área do candidato.' });
+  const oldKey = profile.resume_key;
+  if (!oldKey || !/^[a-f0-9-]{36}\.(pdf|docx)$/.test(oldKey)) return res.status(400).json({ error: 'Cadastre um currículo válido no seu perfil antes de se candidatar.' });
+  const source = path.join(resumesPath, oldKey);
+  if (!fs.existsSync(source)) return res.status(400).json({ error: 'Seu currículo não foi encontrado. Atualize o arquivo no seu perfil.' });
+  const newKey = `${uuid()}${path.extname(oldKey)}`;
+  const target = path.join(resumesPath, newKey);
+  try { fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL); fs.chmodSync(target, 0o600); }
+  catch { discardUpload({ path: target }); return res.status(500).json({ error: 'Não foi possível copiar o currículo. Tente novamente.' }); }
+  const id = uuid(); const created = nowIso();
+  try {
+    run(`INSERT INTO applications (id, job_id, full_name, email, phone, city, state, linkedin, cover_letter, answers, resume_key, status, privacy_notice_version, created_at, updated_at, candidate_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, job.id, profile.full_name, profile.email, profile.phone, profile.city, profile.state, profile.linkedin || '', asText(req.body?.cover_letter, 4000), JSON.stringify({}), newKey, 'Candidatura recebida', NOTICE_VERSION, created, created, req.candidateSession.userId]);
+  } catch (error) { discardUpload({ path: target }); throw error; }
+  // Se a persistência falhar, manter o arquivo evita um registro em memória sem currículo.
+  persistDatabase();
+  const ref = reference(id);
+  if (isEmailConfigured()) {
+    const variables = { nome: profile.full_name, email: profile.email, telefone: profile.phone, vaga: job.title, protocolo: ref, cidade: profile.city, estado: profile.state };
+    notify({ key: 'application_candidate', to: profile.email, variables });
+    const notification = emailSettings().notification;
+    if (notification) notify({ key: 'application_team', to: notification, replyTo: profile.email, variables });
+  }
+  res.status(201).json({ ok: true, reference: ref, message: 'Sua candidatura foi recebida e pode ser acompanhada na área do candidato.' });
 });
 
 app.post('/api/applications', applicationLimiter, upload.single('resume'), async (req, res) => {
@@ -818,7 +982,7 @@ app.post('/api/applications', applicationLimiter, upload.single('resume'), async
   res.status(201).json({ ok: true, reference: ref, message: 'Sua candidatura foi recebida. Obrigado por compartilhar seu perfil com a IM Personnel.' });
 });
 
-app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), (req, res) => {
+app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), async (req, res) => {
   const resume = req.files?.resume?.[0];
   const photo = req.files?.photo?.[0];
   const discardFiles = () => { discardUpload(resume); discardUpload(photo); };
@@ -839,7 +1003,8 @@ app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', ma
     discardFiles();
     return res.status(400).json({ error: 'Não foi possível validar o envio.' });
   }
-  const invalidFields = [];
+  const academic = parseAcademic(req.body);
+  const invalidFields = academicErrors(academic);
   if (!fullName) invalidFields.push('nome completo');
   if (!validEmail(email)) invalidFields.push('e-mail');
   if (!validPhone(phone)) invalidFields.push('telefone');
@@ -857,13 +1022,13 @@ app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', ma
   if (get('SELECT id FROM candidate_accounts WHERE email = ?', [email])) { discardFiles(); return res.status(409).json({ error: 'Já existe uma conta com este e-mail. Entre na área do candidato.' }); }
   const id = uuid();
   const created = nowIso();
-  run(`INSERT INTO talent_profiles (id, full_name, email, phone, city, state, area, linkedin, resume_key, photo_key, consent_at, privacy_notice_version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, fullName, email, phone, city, state, area, linkedin, path.basename(resume.filename), photo ? path.basename(photo.filename) : '', created, NOTICE_VERSION, created, created]);
+  run(`INSERT INTO talent_profiles (id, full_name, email, phone, city, state, area, linkedin, education_course, education_institution, education_period, education_shift, education_completion, resume_key, photo_key, consent_at, privacy_notice_version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, fullName, email, phone, city, state, area, linkedin, ...academicFields.map(key => academic[key]), path.basename(resume.filename), photo ? path.basename(photo.filename) : '', created, NOTICE_VERSION, created, created]);
   const account = { id: uuid(), email, name: fullName };
   const { salt, digest } = hashPassword(password);
   run('INSERT INTO candidate_accounts (id, email, name, salt, password_hash, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [account.id, email, fullName, salt, digest, id, created]);
   persistDatabase();
-  const csrf = createCandidateSession(res, account);
+  const verificationSent = await sendCandidateLink(account, 'verify');
   const ref = reference(id);
   if (isEmailConfigured()) {
     const variables = { nome: fullName, email, telefone: phone, area, cidade: city, estado: state, protocolo: ref };
@@ -871,7 +1036,7 @@ app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', ma
     const notification = emailSettings().notification;
     if (notification) notify({ key: 'talent_team', to: notification, replyTo: email, variables });
   }
-  res.status(201).json({ ok: true, reference: ref, csrf, message: 'Seu perfil foi recebido. Você poderá solicitar a atualização ou remoção dos dados pelo canal de privacidade.' });
+  res.status(201).json({ ok: true, reference: ref, verification_sent: verificationSent, message: verificationSent ? 'Cadastro recebido. Confira seu e-mail e confirme sua conta antes de entrar.' : 'Cadastro recebido, mas não foi possível enviar a confirmação. Solicite um novo link ou entre em contato com a NUDEP.' });
 });
 
 app.post('/api/leads', leadLimiter, async (req, res) => {
@@ -1264,7 +1429,7 @@ app.get('/api/admin/talent', requireAdmin, (req, res) => {
   const params = [search, search, search];
   const { limit, offset } = paginationParams(req);
   const total = Number(get(`SELECT COUNT(*) AS count FROM talent_profiles ${where}`, params)?.count || 0);
-  const items = all(`SELECT id, full_name, email, phone, city, state, area, linkedin, resume_key, photo_key, consent_at, privacy_notice_version, created_at, updated_at
+  const items = all(`SELECT id, full_name, email, phone, city, state, area, linkedin, education_course, education_institution, education_period, education_shift, education_completion, resume_key, photo_key, consent_at, privacy_notice_version, created_at, updated_at
     FROM talent_profiles ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
   res.json({ items, total, limit, offset });
 });
@@ -1778,7 +1943,7 @@ app.use((error, _req, res, _next) => {
 });
 
 app.get('/sitemap.xml', (_req, res) => {
-  const origin = (process.env.SITE_URL || 'https://impersonnel.com.br').replace(/\/$/, '');
+  const origin = (process.env.SITE_URL || 'https://nudep.com.br').replace(/\/$/, '');
   const staticRoutes = ['/', '/sobre', '/solucoes', '/solicitar-proposta', '/contato', '/vagas', '/banco-de-talentos', '/conteudos', '/privacidade', '/cookies', ...['recrutamento-e-selecao', 'executive-search', 'selecao-industrial', 'consultoria-de-rh', 'gestao-de-pessoas-e-desempenho', 'mapeamento-de-processos', 'gestao-de-negocios-e-processos'].map((slug) => `/servicos/${slug}`)];
   const today = activeDateFilter();
   const liveJobs = all('SELECT slug, updated_at FROM jobs WHERE published = 1 AND (expires_at IS NULL OR expires_at >= ?)', [today]);

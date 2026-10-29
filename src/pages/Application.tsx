@@ -5,9 +5,14 @@ import { apiForm, apiGet, type Job } from '../lib/api';
 import { PageIntro } from '../components/PageIntro';
 import { usePageMeta } from '../hooks/usePageMeta';
 
+type ProfileSummary = { full_name: string; email: string; phone: string; city: string; state: string; linkedin: string; has_resume: boolean };
+
 export function Application() {
   const { slug } = useParams();
   const [candidate, setCandidate] = useState<{ email: string; csrf: string } | null>(null);
+  const [profile, setProfile] = useState<ProfileSummary | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [sessionError, setSessionError] = useState('');
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [file, setFile] = useState<File | null>(null);
@@ -17,7 +22,20 @@ export function Application() {
   const [success, setSuccess] = useState<{ message: string; reference: string } | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   usePageMeta('Candidatar-se', job ? `Candidate-se à vaga ${job.title} por meio do portal da NUDEP.` : 'Envie seu perfil profissional para uma oportunidade da NUDEP.', slug ? `/vagas/${slug}/candidatar` : '/vagas', true);
-  useEffect(() => { apiGet<{ authenticated: boolean; user?: { email: string }; csrf?: string }>('/api/candidate/session').then(data => { if (data.authenticated && data.user && data.csrf) setCandidate({ email: data.user.email, csrf: data.csrf }); }).catch(() => {}); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiGet<{ authenticated: boolean; user?: { email: string }; csrf?: string }>('/api/candidate/session');
+        if (data.authenticated && data.user && data.csrf) {
+          const result = await apiGet<{ profile: ProfileSummary }>('/api/candidate/profile');
+          if (!cancelled) { setCandidate({ email: data.user.email, csrf: data.csrf }); setProfile(result.profile); }
+        }
+      } catch { if (!cancelled) setSessionError('Não foi possível carregar sua sessão ou perfil. Atualize a página e tente novamente.'); }
+      finally { if (!cancelled) setSessionLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
@@ -50,14 +68,36 @@ export function Application() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível enviar a candidatura.'); }
     finally { setBusy(false); }
   }
-  if (loading) return <main className="loading-page"><span className="loading-spinner" />Preparando candidatura…</main>;
+  async function submitWithProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError('');
+    if (!candidate || !job) return;
+    if (!acknowledged) { setError('Confirme que leu o aviso de privacidade da candidatura.'); return; }
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    try {
+      const response = await fetch('/api/candidate/apply', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Candidate-CSRF': candidate.csrf }, body: JSON.stringify({ job_slug: job.slug, acknowledged: true, cover_letter: form.get('cover_letter') }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Não foi possível enviar a candidatura.');
+      setSuccess(result); window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível enviar a candidatura.'); }
+    finally { setBusy(false); }
+  }
+  if (loading || sessionLoading) return <main className="loading-page"><span className="loading-spinner" />Preparando candidatura…</main>;
   if (!job) return <main><PageIntro eyebrow="Candidatura" title="Esta oportunidade não está disponível." text="A vaga pode ter sido encerrada ou não está mais publicada." current="Candidatura indisponível" /><div className="container unavailable-actions"><Link to="/vagas" className="button button-dark"><ArrowLeft size={16} /> Voltar às vagas</Link></div></main>;
   return <main>
-    <PageIntro eyebrow="Sua candidatura" title={success ? 'Candidatura recebida.' : 'Conte um pouco sobre você.'} text={success ? 'Obrigado por compartilhar seu perfil com a equipe da NUDEP.' : 'Preencha os campos abaixo para participar do processo seletivo.'} current="Candidatura" compact />
+    <PageIntro eyebrow="Sua candidatura" title={success ? 'Candidatura recebida.' : candidate ? 'Revise sua candidatura.' : 'Conte um pouco sobre você.'} text={success ? 'Obrigado por compartilhar seu perfil com a equipe da NUDEP.' : candidate ? 'Use os dados e o currículo que você já cadastrou para participar desta oportunidade.' : 'Preencha os campos abaixo para participar do processo seletivo.'} current="Candidatura" compact />
     <section className="application-page section-pad"><div className="container application-layout">
       <div className="application-form-column">
         <Link to={`/vagas/${job.slug}`} className="back-link"><ArrowLeft size={15} /> Voltar à oportunidade</Link>
-        {success ? <div className="application-success"><span className="success-check"><Check size={25} /></span><span className="eyebrow">ENVIO CONCLUÍDO</span><h2>Sua candidatura foi recebida.</h2><p>{success.message}</p><div className="application-reference"><span>Protocolo de atendimento</span><strong>{success.reference}</strong></div><Link className="button button-dark" to="/vagas">Explorar outras oportunidades <ArrowUpRight size={16} /></Link></div> : <form className="application-form form-card" onSubmit={submit} noValidate>
+        {success ? <div className="application-success"><span className="success-check"><Check size={25} /></span><span className="eyebrow">ENVIO CONCLUÍDO</span><h2>Sua candidatura foi recebida.</h2><p>{success.message}</p><div className="application-reference"><span>Protocolo de atendimento</span><strong>{success.reference}</strong></div><Link className="button button-dark" to="/vagas">Explorar outras oportunidades <ArrowUpRight size={16} /></Link>{candidate && <> <Link className="text-link" to="/area-do-candidato">Acompanhar minhas candidaturas <ArrowUpRight size={16} /></Link></>}</div> : sessionError ? <div className="form-error" role="alert">{sessionError}</div> : candidate && profile ? <form className="application-form form-card" onSubmit={submitWithProfile}>
+          <div className="form-section-title"><span className="form-number">01</span><div><h2>Revise seus dados</h2><p>Vamos enviar uma cópia dos dados e do currículo atuais do seu perfil. Atualizações futuras não modificam esta candidatura.</p></div></div>
+          <div className="application-profile-summary"><div><span>Nome</span><strong>{profile.full_name}</strong></div><div><span>E-mail</span><strong>{profile.email}</strong></div><div><span>Telefone</span><strong>{profile.phone}</strong></div><div><span>Localidade</span><strong>{profile.city}, {profile.state}</strong></div><div><span>LinkedIn</span><strong>{profile.linkedin || 'Não informado'}</strong></div><div><span>Currículo</span>{profile.has_resume ? <a href="/api/candidate/profile/resume">Baixar currículo cadastrado <ArrowUpRight size={14} /></a> : <strong>Não cadastrado</strong>}</div></div>
+          <p><Link className="text-link" to="/area-do-candidato?secao=perfil">Atualizar meus dados ou currículo <ArrowUpRight size={16} /></Link></p>
+          <label className="field-full cover-letter-field"><span>Apresentação <small>Opcional</small></span><textarea name="cover_letter" rows={4} maxLength={4000} placeholder="Se quiser, conte algo sobre sua trajetória." /></label>
+          <label className="privacy-ack"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>Li o <Link to="/privacidade" target="_blank">Aviso de Privacidade</Link> e entendo como meus dados serão tratados para esta candidatura. <i>*</i></span></label>
+          {error && <div className="form-error" role="alert">{error}</div>}
+          <div className="form-submit-row"><button className="button button-primary" type="submit" disabled={busy || !profile.has_resume}>{busy ? 'Enviando candidatura…' : 'Enviar candidatura com meu perfil'} <ArrowUpRight size={17} /></button><span><LockKeyhole size={14} /> Envio protegido</span></div>
+        </form> : <form className="application-form form-card" onSubmit={submit} noValidate>
           {!candidate && <p className="talent-required-note">Para acompanhar esta candidatura depois, <Link className="text-link" to="/area-do-candidato">entre na sua conta</Link> antes de enviar. Você também pode enviar sem conta.</p>}<div className="form-section-title"><span className="form-number">01</span><div><h2>Seus dados</h2><p>Informações para a equipe de recrutamento entrar em contato.</p></div></div>
           <div className="form-grid"><label className="field-full"><span>Nome completo <i>*</i></span><input type="text" name="full_name" autoComplete="name" maxLength={160} required placeholder="Como podemos chamar você?" /></label><label><span>E-mail <i>*</i></span><input type="email" name="email" autoComplete="email" maxLength={254} required placeholder="voce@email.com" value={candidate ? candidate.email : undefined} readOnly={!!candidate} /></label><label><span>Telefone <i>*</i></span><input type="tel" name="phone" autoComplete="tel" inputMode="tel" maxLength={24} required placeholder="(00) 00000-0000" /></label><label><span>Cidade <i>*</i></span><input type="text" name="city" autoComplete="address-level2" maxLength={100} required placeholder="Sua cidade" /></label><label><span>Estado <i>*</i></span><input type="text" name="state" autoComplete="address-level1" maxLength={2} required placeholder="UF" /></label><label className="field-full"><span>LinkedIn <small>Opcional</small></span><input type="url" name="linkedin" maxLength={500} placeholder="https://www.linkedin.com/in/..." /></label></div>
           <div className="form-section-title form-section-spaced"><span className="form-number">02</span><div><h2>Seu currículo</h2><p>PDF ou DOCX · até 5 MB · acesso restrito à equipe de recrutamento.</p></div></div>

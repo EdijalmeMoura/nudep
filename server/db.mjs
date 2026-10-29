@@ -106,6 +106,14 @@ export async function initializeDatabase() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS candidate_tokens (
+      token_hash TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL REFERENCES candidate_accounts(id) ON DELETE CASCADE,
+      purpose TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS candidate_tokens_account_idx ON candidate_tokens(candidate_id, purpose);
+
     CREATE TABLE IF NOT EXISTS leads (
       id TEXT PRIMARY KEY,
       contact_name TEXT NOT NULL,
@@ -217,7 +225,13 @@ export async function initializeDatabase() {
   for (const [table, column, definition] of [
     ['jobs', 'hiring_organization', "TEXT NOT NULL DEFAULT ''"],
     ['privacy_requests', 'updated_at', "TEXT NOT NULL DEFAULT ''"],
+    ['candidate_accounts', 'email_verified_at', "TEXT NOT NULL DEFAULT ''"],
     ['applications', 'candidate_id', "TEXT NOT NULL DEFAULT ''"],
+    ['talent_profiles', 'education_course', "TEXT NOT NULL DEFAULT ''"],
+    ['talent_profiles', 'education_institution', "TEXT NOT NULL DEFAULT ''"],
+    ['talent_profiles', 'education_period', "TEXT NOT NULL DEFAULT ''"],
+    ['talent_profiles', 'education_shift', "TEXT NOT NULL DEFAULT ''"],
+    ['talent_profiles', 'education_completion', "TEXT NOT NULL DEFAULT ''"],
     ['talent_profiles', 'photo_key', "TEXT NOT NULL DEFAULT ''"],
     ['privacy_requests', 'internal_notes', "TEXT NOT NULL DEFAULT ''"],
     ['articles', 'image_key', "TEXT NOT NULL DEFAULT ''"],

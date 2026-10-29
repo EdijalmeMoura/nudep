@@ -12,6 +12,7 @@ import { JobDetail } from './pages/JobDetail';
 import { Application } from './pages/Application';
 import { TalentBank } from './pages/TalentBank';
 import { CandidateArea } from './pages/CandidateArea';
+import { CandidateSecurity } from './pages/CandidateSecurity';
 import { Contact } from './pages/Contact';
 import { Proposal } from './pages/Proposal';
 import { PartnerRegistration } from './pages/PartnerRegistration';
@@ -47,6 +48,10 @@ function RouteTree() {
     <Route path="/vagas" element={<PublicLayout><Careers /></PublicLayout>} />
     <Route path="/vagas/:slug/candidatar" element={<PublicLayout><Application /></PublicLayout>} />
     <Route path="/vagas/:slug" element={<PublicLayout><JobDetail /></PublicLayout>} />
+    <Route path="/recuperar-senha" element={<PublicLayout><CandidateSecurity mode="request-reset" /></PublicLayout>} />
+    <Route path="/reenviar-confirmacao" element={<PublicLayout><CandidateSecurity mode="request-verify" /></PublicLayout>} />
+    <Route path="/confirmar-email" element={<PublicLayout><CandidateSecurity mode="verify" /></PublicLayout>} />
+    <Route path="/redefinir-senha" element={<PublicLayout><CandidateSecurity mode="reset" /></PublicLayout>} />
     <Route path="/area-do-candidato" element={<PublicLayout><CandidateArea /></PublicLayout>} />
     <Route path="/curriculo" element={<PublicLayout><TalentBank /></PublicLayout>} />
     <Route path="/banco-de-talentos" element={<PublicLayout><TalentBank /></PublicLayout>} />

@@ -16,7 +16,7 @@ Site institucional responsivo em português brasileiro para a IM Personnel, com 
 - **Slides da página inicial no painel**: menu *Página inicial* para editar os destaques do carrossel — etiqueta, título em várias linhas com a linha destacada, texto de apoio, botões (somente caminhos internos), rodapé, imagem de fundo opcional, ordem de exibição e ativação/desativação sem perder o conteúdo.
 - **Notificações por e-mail no painel**: menu *Notificações* para configurar o servidor SMTP (host, porta, SSL/TLS, usuário, senha, remetente e caixa da equipe), testar a conexão com um envio real e revisar assunto e corpo de cada mensagem disparada pelos formulários, com variáveis como `{{nome}}`, `{{vaga}}` e `{{protocolo}}`.
 - Páginas de privacidade e preferências de cookies, sitemap dinâmico e `robots.txt`.
-- E-mail transacional opcional por SMTP. O que for salvo no painel tem prioridade sobre as variáveis de ambiente. Os formulários continuam registrando os dados mesmo sem SMTP configurado, e o dashboard avisa quando o SMTP ou a caixa de notificações estão desligados.
+- E-mail transacional via SMTP. Sem SMTP e `SITE_URL` público correto, a confirmação do e-mail e a recuperação de senha dos candidatos não funcionam; os demais formulários ainda registram os dados no painel.
 - **Saúde da entrega de e-mail**: cada tentativa de envio fica registrada e o dashboard avisa quando o último envio falhou, mostrando o erro do provedor — sem isso uma senha de SMTP expirada deixaria o candidato sem confirmação e a equipe sem o aviso, sem ninguém perceber.
 - **Listas administrativas paginadas com busca no servidor**: candidaturas, banco de talentos, leads, pedidos de privacidade e auditoria informam o total real, mostram "exibindo X de Y" e permitem carregar o restante — a busca encontra registros antigos que não cabem na primeira página.
 - **Exportação em CSV e backup completo**: cada lista baixa o que está filtrado na tela (ponto e vírgula, BOM e acentos preservados, prontos para o Excel em português) e o dashboard entrega um ZIP com a base, os currículos e as imagens, com instruções de restauração. Toda exportação e todo backup entram na auditoria.
@@ -104,7 +104,7 @@ Os três formulários públicos já funcionam sem configuração adicional: cada
 | Candidatura a uma vaga | `/vagas/{slug}/candidatar` | `POST /api/applications` | Painel › Candidaturas |
 | Currículo no banco de talentos | `/curriculo`, `/banco-de-talentos` | `POST /api/talent` | Painel › Banco de talentos |
 
-O que **só** funciona com configuração é o envio de e-mails. Sem SMTP, quem envia não recebe confirmação e a equipe não é avisada — ainda assim os dados ficam gravados e visíveis no painel. Para ativar as notificações, defina no ambiente:
+O envio de e-mails exige configuração. **Para a conta do candidato, configure SMTP e `SITE_URL` com o domínio público HTTPS**: sem isso não é possível confirmar o e-mail nem recuperar a senha. Um cadastro pode ser recebido mesmo se o envio falhar, mas a pessoa deverá solicitar outro link após a configuração. Contas criadas antes deste recurso também precisam confirmar seu e-mail para voltar a entrar. Para ativar as notificações, defina no ambiente:
 
 ```
 SMTP_HOST=smtp.seuprovedor.com
@@ -114,6 +114,7 @@ SMTP_USER=usuario@seudominio.com.br
 SMTP_PASS=segredo
 EMAIL_FROM="IM Personnel <noreply@seudominio.com.br>"
 LEADS_NOTIFICATION_EMAIL=contato@seudominio.com.br
+SITE_URL=https://seudominio.com.br
 ```
 
 `LEADS_NOTIFICATION_EMAIL` é a caixa da equipe que recebe os avisos de novos contatos, candidaturas e currículos cadastrados. O dashboard exibe um aviso explícito enquanto essas variáveis estiverem ausentes, para que a falta de notificação não seja confundida com formulário inativo.
@@ -248,13 +249,13 @@ O servidor escuta em `0.0.0.0` e usa `PORT` (padrão 5173). Configure um proxy r
 - Backend: Express 5, API na mesma origem, sessão administrativa por cookie `HttpOnly`/`SameSite=Strict`, token CSRF, limitação de tentativas, `scrypt` para senhas e trilha de auditoria.
 - Persistência: SQLite compilado para WebAssembly (`sql.js`) com arquivo binário persistente, sem dependência de módulos nativos. É adequado a uma instância de baixo volume; **não compartilhe a mesma base de arquivo entre réplicas e não use NFS como substituto de um banco distribuído**. Para maior concorrência/escala, migre o adaptador para PostgreSQL/MySQL gerenciado.
 - Sessões são mantidas em memória e terminam ao reiniciar o processo. Operação prevista em uma instância. Para múltiplas instâncias, substitua por store de sessão compartilhado e banco transacional central.
-- Currículos ficam em `DATA_DIR/private-resumes`, fora de `public/` e acessíveis somente por endpoint administrativo autenticado. O servidor limita uploads a 5 MB e aceita apenas PDF/DOCX. Proteja também o volume do servidor, use criptografia de disco em produção e restrinja os backups.
+- Currículos e fotos de candidatos ficam em `DATA_DIR/private-resumes`, fora de `public/`, acessíveis somente à equipe autorizada ou ao próprio candidato autenticado. O servidor limita uploads a 5 MB e aceita apenas PDF/DOCX. Proteja também o volume do servidor, use criptografia de disco em produção e restrinja os backups.
 - Imagens de conteúdo ficam em `DATA_DIR/content-images` e são públicas por natureza (servidas em `/media/content-images/{chave}`). O nome do arquivo é sempre um UUID gerado no servidor com extensão fixa, a chave é validada por expressão regular antes de qualquer acesso a disco e a assinatura do arquivo é conferida no envio, o que impede traversal e upload de não-imagens.
 - O banco não cifra cada campo individualmente: apenas a senha do SMTP recebe proteção própria (AES-256-GCM com chave derivada de `APP_SECRET`). Os demais dados pessoais continuam dependendo de criptografia em repouso no volume, controles de acesso e política de backup/rotação.
 - A verificação em duas etapas cobre a conta administrativa (TOTP). Os códigos de recuperação são guardados como hash e consumidos no primeiro uso; o desafio intermediário do login vive em memória e expira em cinco minutos.
 - Os limites de tentativa são de 6 envios de formulário e 8 logins por IP a cada 15 minutos, ajustáveis por `FORM_RATE_LIMIT` e `LOGIN_RATE_LIMIT` quando a operação exigir.
 - Todas as contas administrativas têm acesso completo ao painel. A criação, a desativação/reativação e a troca de senha são feitas no painel em **Usuários** (ou pelo utilitário de terminal); gestão granular de papéis e permissões continua fora do escopo desta entrega, então crie acessos somente para pessoas autorizadas. O sistema impede desativar a própria conta em uso e mantém sempre ao menos uma conta ativa.
-- A área de candidato com conta, autenticação própria e recuperação de senha foi deixada opcional/desabilitada: a candidatura e o banco de talentos funcionam sem criar conta.
+- A área do candidato exige confirmação de e-mail para entrar. Links de confirmação expiram em 24 horas; os de recuperação de senha, em 30 minutos. Ambos são de uso único e os tokens são armazenados como hash. O acompanhamento mostra apenas candidaturas enviadas durante a sessão autenticada. A solicitação de exclusão é encaminhada para análise no painel de privacidade e não apaga dados automaticamente.
 
 ### Backup e recuperação
 
