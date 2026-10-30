@@ -518,6 +518,9 @@ function slideToPublic(row) {
   const lines = slideTitleLines(row.title);
   const imageKey = contentImageKey(row.image_key);
   const defaultSlide = heroSlideDefaults.find((slide) => slide.slug === row.slug);
+  // Atualiza a descrição dos destaques originais sem alterar imagens ou textos personalizados no painel.
+  const oldDefaultAlts = { 'pessoas-e-negocios': 'Lideranças e profissionais colaborando em uma conversa de estratégia', recrutamento: 'Recrutadora e profissional conversam durante uma entrevista de seleção', liderancas: 'Lideranças trocam perspectivas em reunião de estratégia' };
+  const imageAlt = !imageKey && row.image_alt === oldDefaultAlts[row.slug] ? defaultSlide?.imageAlt : row.image_alt;
   return {
     id: row.id,
     slug: row.slug,
@@ -531,7 +534,7 @@ function slideToPublic(row) {
     secondary: { to: row.secondary_to || '/', label: row.secondary_label || '' },
     footnote: row.footnote || '',
     imagePosition: row.image_position || 'center 52%',
-    imageAlt: row.image_alt || '',
+    imageAlt: imageAlt || '',
     imageKey,
     imageUrl: imageKey ? imagePublicUrl(imageKey) : (defaultSlide?.imageUrl || DEFAULT_HERO_IMAGE),
     accentLine: lines.findIndex((line) => line.accent) + 1 || '',

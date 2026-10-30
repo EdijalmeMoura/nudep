@@ -25,8 +25,8 @@
     },
     "footnote": "Conectando talentos a novas oportunidades.",
     "imagePosition": "82% 52%",
-    "imageAlt": "Lideranças e profissionais colaborando em uma conversa de estratégia",
-    "imageUrl": "/images/hero-team.jpg"
+    "imageAlt": "Estudantes e uma mentora colaboram em um ambiente de trabalho.",
+    "imageUrl": "/images/slide-talentos.jpg"
   },
   {
     "slug": "recrutamento",
@@ -54,8 +54,8 @@
     },
     "footnote": "Uma parceria para desenvolver talentos.",
     "imagePosition": "82% 52%",
-    "imageAlt": "Recrutadora e profissional conversam durante uma entrevista de seleção",
-    "imageUrl": "/images/hero-recruitment.jpg"
+    "imageAlt": "Profissional de empresa conversa com jovem estagiário em um escritório.",
+    "imageUrl": "/images/slide-empresas.jpg"
   },
   {
     "slug": "liderancas",
@@ -83,7 +83,7 @@
     },
     "footnote": "Desenvolver pessoas. Transformar futuros.",
     "imagePosition": "82% 52%",
-    "imageAlt": "Lideranças trocam perspectivas em reunião de estratégia",
-    "imageUrl": "/images/hero-leadership.jpg"
+    "imageAlt": "Estudantes conversam em um campus universitário.",
+    "imageUrl": "/images/slide-estudantes.jpg"
   }
 ]

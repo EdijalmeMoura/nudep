@@ -82,12 +82,11 @@ test('os destaques da página inicial são editáveis pelo painel', { timeout: 3
   assert.equal(publicSlides.items.length, 3, 'os três destaques revisados são carregados na instalação');
   assert.ok(publicSlides.items.every((slide) => slide.active), 'todos começam ativos');
   assert.ok(publicSlides.items[0].title.some((line) => line.accent), 'a linha destacada do título é preservada');
-  assert.equal(publicSlides.items[0].imageUrl, '/images/hero-team.jpg', 'preserva a imagem original no primeiro destaque');
   assert.deepEqual(publicSlides.items.map((slide) => slide.imageUrl), [
-    '/images/hero-team.jpg',
-    '/images/hero-recruitment.jpg',
-    '/images/hero-leadership.jpg',
-  ], 'cada destaque recebe uma imagem própria, preservando a original no primeiro');
+    '/images/slide-talentos.jpg',
+    '/images/slide-empresas.jpg',
+    '/images/slide-estudantes.jpg',
+  ], 'cada destaque recebe uma imagem própria para seu tema');
 
   const adminSlides = await fetch(`${baseUrl}/api/admin/hero-slides`, { headers: { cookie } }).then((response) => response.json());
   assert.equal(adminSlides.items.length, 3);

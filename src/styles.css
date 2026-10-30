@@ -1729,3 +1729,54 @@ img { max-width: 100%; }
 .cover-letter-field textarea::placeholder { color: #8298a5; }
 .cover-letter-field textarea:focus { outline: none; border-color: #0876b9; box-shadow: 0 0 0 3px rgba(8, 118, 185, .14); }
 @media (max-width: 760px) { .cover-letter-field textarea { font-size: 16px; } }
+
+/* Home: caminhos claros, movimento sutil e visual acolhedor. */
+.nudep-hero .hero-image { filter: none; }
+.home-hero-quick { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.home-hero-quick a { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 13px; border: 1px solid rgba(255,255,255,.48); border-radius: 6px; color: #fff; background: rgba(4,49,79,.4); font-size: 12px; font-weight: 700; transition: background .2s, border-color .2s; }
+.home-hero-quick a:hover, .home-hero-quick a:focus-visible { background: #075c96; border-color: #fff; }
+.nudep-hero .hero-bottom-note { margin-top: clamp(30px, 5vh, 55px); }
+.nudep-register-grid article, .home-journey-grid article, .nudep-home .job-card, .nudep-home .insight-card { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+.nudep-register-grid article:hover, .home-journey-grid article:hover, .nudep-home .job-card:hover, .nudep-home .insight-card:hover { transform: translateY(-5px); box-shadow: 0 16px 34px rgba(7,92,150,.12); border-color: #a6d2e8; }
+.nudep-register-grid article { position: relative; overflow: hidden; }
+.nudep-register-grid article::after { content: ''; position: absolute; right: -30px; bottom: -50px; width: 110px; height: 110px; border: 1px solid #cde7f3; border-radius: 50%; pointer-events: none; }
+.home-journey { background: #eaf5fb; }
+.home-journey-heading { display: flex; align-items: end; justify-content: space-between; gap: 25px; }
+.home-journey-heading > .text-link { flex: none; margin-bottom: 45px; }
+.home-journey-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 18px; }
+.home-journey-grid article { padding: 26px; border: 1px solid #d4e8f2; border-radius: 12px; background: #fff; }
+.home-journey-top { display: flex; align-items: center; justify-content: space-between; }
+.home-journey-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; color: #0876b9; background: #e7f5fc; }
+.home-journey-number { color: #d0e5ef; font-size: 27px; font-weight: 800; }
+.home-journey-grid h3 { margin: 20px 0 8px; color: #075c96; font-size: 19px; }
+.home-journey-grid p { margin: 0; color: #536e7d; font-size: 14px; line-height: 1.75; }
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .nudep-home .nudep-section-head, .nudep-home .home-journey-grid article, .nudep-home .nudep-register-grid article { animation: home-reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 30%; }
+  }
+}
+@keyframes home-reveal { from { opacity: .3; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 760px) {
+  .home-journey-heading { align-items: flex-start; flex-direction: column; gap: 0; }
+  .home-journey-heading > .text-link { margin: -20px 0 28px; }
+  .home-journey-grid { grid-template-columns: 1fr; }
+  .home-journey-grid article { padding: 22px; }
+  .nudep-hero { height: auto; max-height: none; min-height: 740px; padding-bottom: 80px; }
+}
+@media (max-width: 540px) {
+  .nudep-hero .hero-content { padding-top: 125px; }
+  .nudep-hero h1 { font-size: clamp(42px, 11vw, 60px); }
+  .home-hero-quick { margin-top: 18px; }
+  .nudep-hero .hero-bottom-note { margin-top: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nudep-home *, .nudep-home *::before, .nudep-home *::after { animation: none !important; transition: none !important; }
+  .nudep-register-grid article:hover, .home-journey-grid article:hover, .nudep-home .job-card:hover, .nudep-home .insight-card:hover { transform: none; }
+}
+
+/* Redes sociais no rodapé */
+.footer-social-group { margin-top: 5px; }
+.footer-social-group > span { color: #d6ecf7; font-size: 11px; font-weight: 700; }
+.footer-socials { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.footer-socials a { width: 44px; height: 44px; flex: 0 0 44px; color: #fff; background: rgba(255,255,255,.08); }
+.footer-socials a:focus-visible { outline: 3px solid #ffa500; outline-offset: 3px; }
