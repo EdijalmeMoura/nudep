@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, BriefcaseBusiness, CalendarDays, Check, Clock3, Copy, MapPin, Share2, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, BriefcaseBusiness, CalendarDays, Check, Clock3, Copy, MapPin, Share2, ShieldCheck, Bookmark } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { apiGet, formatDate, type Job } from '../lib/api';
 import { PageIntro } from '../components/PageIntro';
@@ -11,6 +11,19 @@ export function JobDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [shareMessage, setShareMessage] = useState('');
+  const [candidate, setCandidate] = useState<{ authenticated: boolean; csrf?: string } | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  useEffect(() => { let cancelled = false; apiGet<{ authenticated: boolean; csrf?: string }>('/api/candidate/session').then(async session => { if (cancelled) return; setCandidate(session); if (session.authenticated && slug) { const result = await apiGet<{ items: { slug: string }[] }>('/api/candidate/saved-jobs'); if (!cancelled) setSaved(result.items.some(item => item.slug === slug)); } }).catch(() => { if (!cancelled) setSaveMessage('Não foi possível verificar suas vagas salvas.'); }); return () => { cancelled = true; }; }, [slug]);
+  async function toggleSaved() {
+    if (!job || !candidate?.csrf) return;
+    setSaveBusy(true); setSaveMessage('');
+    try { const response = await fetch(`/api/candidate/saved-jobs/${encodeURIComponent(job.id)}`, { method: saved ? 'DELETE' : 'PUT', credentials: 'same-origin', headers: { 'X-Candidate-CSRF': candidate.csrf } }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Não foi possível atualizar suas vagas salvas.'); setSaved(data.saved); setSaveMessage(data.saved ? 'Vaga salva na sua conta.' : 'Vaga removida das suas vagas salvas.'); }
+    catch (reason) { setSaveMessage(reason instanceof Error ? reason.message : 'Não foi possível atualizar suas vagas salvas.'); }
+    finally { setSaveBusy(false); }
+  }
+
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
@@ -60,7 +73,7 @@ export function JobDetail() {
         {job.benefits.length > 0 && <section className="job-description-section"><span className="eyebrow">04 / BENEFÍCIOS</span><h2>Benefícios informados</h2><ul className="check-list">{job.benefits.map((item) => <li key={item}><Check size={16} />{item}</li>)}</ul></section>}
         <div className="job-privacy-note"><ShieldCheck size={19} /><p>As informações da sua candidatura serão tratadas conforme o <Link to="/privacidade">Aviso de Privacidade</Link> e utilizadas para conduzir este processo seletivo.</p></div>
       </div>
-      <aside className="job-detail-sidebar"><div className="apply-card"><span className="eyebrow">SEU PRÓXIMO PASSO</span><h2>Candidate-se a esta oportunidade.</h2><p>Compartilhe seu perfil profissional com a equipe de recrutamento.</p><Link to={`/vagas/${job.slug}/candidatar`} className="button button-primary apply-button">Candidatar-se <ArrowUpRight size={17} /></Link><button className="share-job-button" type="button" onClick={shareJob}><Share2 size={16} /> Compartilhar oportunidade <Copy size={13} /></button>{shareMessage && <span className="form-hint" role="status">{shareMessage}</span>}<div className="apply-card-foot"><span><MapPin size={15} />{job.city}, {job.state}</span><span><Clock3 size={15} />{job.modality} · {job.employment_type}</span>{job.expires_at && <span><CalendarDays size={15} />Encerra em {formatDate(job.expires_at)}</span>}</div></div><div className="career-sidebar-help"><span className="small-index">AINDA NÃO É A SUA VAGA?</span><p>Cadastre seu currículo no banco de talentos para futuras oportunidades.</p><Link to="/banco-de-talentos">Apresentar meu perfil <ArrowUpRight size={15} /></Link></div></aside>
+      <aside className="job-detail-sidebar"><div className="apply-card"><span className="eyebrow">SEU PRÓXIMO PASSO</span><h2>Candidate-se a esta oportunidade.</h2><p>Compartilhe seu perfil profissional com a equipe de recrutamento.</p><Link to={`/vagas/${job.slug}/candidatar`} className="button button-primary apply-button">Candidatar-se <ArrowUpRight size={17} /></Link>{candidate?.authenticated ? <button className="share-job-button" type="button" onClick={toggleSaved} disabled={saveBusy} aria-pressed={saved}><Bookmark size={16} /> {saved ? 'Remover das vagas salvas' : 'Salvar vaga'}</button> : candidate && <Link className="share-job-button" to="/area-do-candidato"><Bookmark size={16} /> Entre para salvar esta vaga</Link>}{saveMessage && <span className="form-hint" role="status">{saveMessage}</span>}<button className="share-job-button" type="button" onClick={shareJob}><Share2 size={16} /> Compartilhar oportunidade <Copy size={13} /></button>{shareMessage && <span className="form-hint" role="status">{shareMessage}</span>}<div className="apply-card-foot"><span><MapPin size={15} />{job.city}, {job.state}</span><span><Clock3 size={15} />{job.modality} · {job.employment_type}</span>{job.expires_at && <span><CalendarDays size={15} />Encerra em {formatDate(job.expires_at)}</span>}</div></div><div className="career-sidebar-help"><span className="small-index">AINDA NÃO É A SUA VAGA?</span><p>Cadastre seu currículo no banco de talentos para futuras oportunidades.</p><Link to="/banco-de-talentos">Apresentar meu perfil <ArrowUpRight size={15} /></Link></div></aside>
     </div></section>
   </main>;
 }

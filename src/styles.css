@@ -1780,3 +1780,25 @@ img { max-width: 100%; }
 .footer-socials { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 .footer-socials a { width: 44px; height: 44px; flex: 0 0 44px; color: #fff; background: rgba(255,255,255,.08); }
 .footer-socials a:focus-visible { outline: 3px solid #ffa500; outline-offset: 3px; }
+
+/* Orientações e acompanhamento */
+.career-faq { max-width: 850px; margin: 60px auto 0; }
+.career-faq h2 { margin: 10px 0 20px; color: #075c96; font-size: clamp(27px, 3vw, 38px); }
+.career-faq details { margin: 10px 0; border: 1px solid #d9eaf2; border-radius: 8px; background: #fff; }
+.career-faq summary { padding: 17px 20px; color: #164d6b; font-size: 14px; font-weight: 700; cursor: pointer; }
+.career-faq details p { margin: 0; padding: 0 20px 18px; color: #536e7d; font-size: 14px; line-height: 1.7; }
+.career-faq details p a { color: #075c96; text-decoration: underline; }
+.candidate-profile-tips { margin: 20px 0; padding: 18px; border: 1px solid #cfe6f1; border-radius: 8px; background: #f2faff; }
+.candidate-profile-tips strong { color: #075c96; }
+.candidate-profile-tips p { margin: 7px 0 12px; line-height: 1.6; }
+.candidate-profile-tips button { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.admin-privacy-overview { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 12px; padding: 16px; border: 1px solid #cfe6f1; border-radius: 8px; color: #075c96; background: #f2faff; }
+.admin-privacy-overview > div { flex: 1 1 200px; }
+.admin-privacy-overview p { margin: 4px 0 0; color: #536e7d; font-size: 11px; }
+.admin-privacy-overview a { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; }
+.candidate-saved-remove { margin-left: 16px; padding: 6px 0; border: 0; color: #8c3c3c; background: transparent; font-weight: 700; cursor: pointer; }
+.candidate-saved-remove:focus-visible { outline: 2px solid #075c96; outline-offset: 3px; }
+.candidate-status-history { margin: 12px 0; padding: 12px 14px; border-radius: 6px; background: #f4f9fc; color: #31576b; font-size: 13px; }
+.candidate-status-history summary { font-weight: 700; cursor: pointer; }
+.candidate-status-history p { margin: 8px 0; font-size: 12px; }
+.candidate-status-history ol { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }

@@ -912,10 +912,28 @@ app.put('/api/candidate/profile', requireCandidate, requireCandidateCsrf, upload
   res.json({ profile: publicCandidateProfile(candidateProfile(req.candidateSession.userId)) });
 });
 
+app.get('/api/candidate/saved-jobs', requireCandidate, (req, res) => {
+  const items = all(`SELECT j.id, j.slug, j.title, j.city, j.state, j.modality, s.created_at,
+    CASE WHEN j.published = 1 AND (j.expires_at IS NULL OR j.expires_at >= ?) THEN 1 ELSE 0 END AS job_available
+    FROM candidate_saved_jobs s JOIN jobs j ON j.id = s.job_id WHERE s.candidate_id = ? ORDER BY s.created_at DESC`, [activeDateFilter(), req.candidateSession.userId]);
+  res.set('Cache-Control', 'no-store'); res.json({ items });
+});
+app.put('/api/candidate/saved-jobs/:id', requireCandidate, requireCandidateCsrf, (req, res) => {
+  const job = get('SELECT id FROM jobs WHERE id = ? AND published = 1 AND (expires_at IS NULL OR expires_at >= ?)', [asText(req.params.id, 64), activeDateFilter()]);
+  if (!job) return res.status(404).json({ error: 'Esta vaga não está disponível.' });
+  run('INSERT OR IGNORE INTO candidate_saved_jobs (candidate_id, job_id, created_at) VALUES (?, ?, ?)', [req.candidateSession.userId, job.id, nowIso()]);
+  persistDatabase(); res.json({ saved: true });
+});
+app.delete('/api/candidate/saved-jobs/:id', requireCandidate, requireCandidateCsrf, (req, res) => {
+  run('DELETE FROM candidate_saved_jobs WHERE candidate_id = ? AND job_id = ?', [req.candidateSession.userId, asText(req.params.id, 64)]);
+  persistDatabase(); res.json({ saved: false });
+});
+
 app.get('/api/candidate/applications', requireCandidate, (req, res) => {
   res.set('Cache-Control', 'no-store');
   const items = all(`SELECT a.id, a.status, a.created_at, a.updated_at, j.title, j.slug, CASE WHEN j.published = 1 AND (j.expires_at IS NULL OR j.expires_at >= ?) THEN 1 ELSE 0 END AS job_available FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.candidate_id = ? ORDER BY a.created_at DESC`, [activeDateFilter(), req.candidateSession.userId]);
-  res.json({ items });
+  const history = all(`SELECT h.application_id, h.status, h.created_at FROM application_status_history h JOIN applications a ON a.id = h.application_id WHERE a.candidate_id = ? ORDER BY h.created_at ASC, h.rowid ASC`, [req.candidateSession.userId]);
+  res.json({ items: items.map(item => ({ ...item, status_history: history.filter(event => event.application_id === item.id).map(({ status, created_at }) => ({ status, created_at })) })) });
 });
 
 // Candidatura autenticada usa somente dados da própria conta e guarda uma cópia
@@ -1272,6 +1290,7 @@ app.get('/api/admin/dashboard', requireAdmin, (_req, res) => {
   const counts = {
     active_jobs: Number(get('SELECT COUNT(*) AS count FROM jobs WHERE published = 1 AND (expires_at IS NULL OR expires_at >= ?)', [today])?.count || 0),
     applications: Number(get('SELECT COUNT(*) AS count FROM applications')?.count || 0),
+    pending_privacy: Number(get("SELECT COUNT(*) AS count FROM privacy_requests WHERE status != 'Concluída'")?.count || 0),
     new_leads: Number(get("SELECT COUNT(*) AS count FROM leads WHERE status = 'Novo contato'")?.count || 0),
     expiring_jobs: Number(get("SELECT COUNT(*) AS count FROM jobs WHERE published = 1 AND expires_at BETWEEN ? AND date(?, '+7 day')", [today, today])?.count || 0),
   };
@@ -1409,11 +1428,13 @@ app.get('/api/admin/applications', requireAdmin, (req, res) => {
   res.json({ items, total, limit, offset });
 });
 app.put('/api/admin/applications/:id', requireAdmin, requireCsrf, (req, res) => {
-  const existing = get('SELECT id FROM applications WHERE id = ?', [asText(req.params.id, 64)]);
+  const existing = get('SELECT id, status FROM applications WHERE id = ?', [asText(req.params.id, 64)]);
   if (!existing) return res.status(404).json({ error: 'Candidatura não encontrada.' });
   const status = asText(req.body?.status, 80);
   if (!allowedApplicationStatuses.includes(status)) return res.status(400).json({ error: 'Status de candidatura inválido.' });
-  run('UPDATE applications SET status = ?, internal_notes = ?, updated_at = ? WHERE id = ?', [status, asText(req.body?.internal_notes, 4000), nowIso(), existing.id]);
+  const updatedAt = nowIso();
+  run('UPDATE applications SET status = ?, internal_notes = ?, updated_at = ? WHERE id = ?', [status, asText(req.body?.internal_notes, 4000), updatedAt, existing.id]);
+  if (status !== existing.status) run('INSERT INTO application_status_history (id, application_id, status, created_at) VALUES (?, ?, ?, ?)', [uuid(), existing.id, status, updatedAt]);
   audit(req, 'application.updated', 'application', existing.id, { status });
   res.json({ ok: true });
 });
@@ -1428,8 +1449,8 @@ app.delete('/api/admin/applications/:id', requireAdmin, requireCsrf, (req, res) 
 });
 app.get('/api/admin/talent', requireAdmin, (req, res) => {
   const search = `%${asText(req.query.q, 140).toLowerCase()}%`;
-  const where = 'WHERE lower(full_name) LIKE ? OR lower(email) LIKE ? OR lower(area) LIKE ?';
-  const params = [search, search, search];
+  const where = 'WHERE lower(full_name) LIKE ? OR lower(email) LIKE ? OR lower(area) LIKE ? OR lower(city) LIKE ? OR lower(state) LIKE ? OR lower(education_course) LIKE ? OR lower(education_institution) LIKE ?';
+  const params = Array(7).fill(search);
   const { limit, offset } = paginationParams(req);
   const total = Number(get(`SELECT COUNT(*) AS count FROM talent_profiles ${where}`, params)?.count || 0);
   const items = all(`SELECT id, full_name, email, phone, city, state, area, linkedin, education_course, education_institution, education_period, education_shift, education_completion, resume_key, photo_key, consent_at, privacy_notice_version, created_at, updated_at
@@ -1609,9 +1630,11 @@ const exportKinds = {
     ],
     count: (req) => {
       const search = `%${asText(req.query.q, 140).toLowerCase()}%`;
-      return { total: Number(get('SELECT COUNT(*) AS count FROM talent_profiles WHERE lower(full_name) LIKE ? OR lower(email) LIKE ? OR lower(area) LIKE ?', [search, search, search])?.count || 0), where: '', params: [search, search, search] };
+      const where = 'WHERE lower(full_name) LIKE ? OR lower(email) LIKE ? OR lower(area) LIKE ? OR lower(city) LIKE ? OR lower(state) LIKE ? OR lower(education_course) LIKE ? OR lower(education_institution) LIKE ?';
+      const params = Array(7).fill(search);
+      return { total: Number(get(`SELECT COUNT(*) AS count FROM talent_profiles ${where}`, params)?.count || 0), where, params };
     },
-    select: (_where, params) => all(`SELECT * FROM talent_profiles WHERE lower(full_name) LIKE ? OR lower(email) LIKE ? OR lower(area) LIKE ? ORDER BY created_at DESC LIMIT ${CSV_ROW_LIMIT}`, params),
+    select: (where, params) => all(`SELECT * FROM talent_profiles ${where} ORDER BY created_at DESC LIMIT ${CSV_ROW_LIMIT}`, params),
   },
   leads: {
     label: 'solicitacoes-empresariais',

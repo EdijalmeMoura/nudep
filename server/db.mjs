@@ -76,6 +76,13 @@ export async function initializeDatabase() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS application_status_history (
+      id TEXT PRIMARY KEY,
+      application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS application_status_history_idx ON application_status_history(application_id, created_at);
     CREATE INDEX IF NOT EXISTS applications_job_idx ON applications(job_id, created_at);
     CREATE INDEX IF NOT EXISTS applications_email_idx ON applications(email);
 
@@ -106,6 +113,12 @@ export async function initializeDatabase() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS candidate_saved_jobs (
+      candidate_id TEXT NOT NULL REFERENCES candidate_accounts(id) ON DELETE CASCADE,
+      job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (candidate_id, job_id)
+    );
     CREATE TABLE IF NOT EXISTS candidate_tokens (
       token_hash TEXT PRIMARY KEY,
       candidate_id TEXT NOT NULL REFERENCES candidate_accounts(id) ON DELETE CASCADE,
