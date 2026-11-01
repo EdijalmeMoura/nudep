@@ -152,7 +152,7 @@ test('SMTP e modelos de mensagem são configuráveis pelo painel', { timeout: 30
   const initial = await fetch(`${baseUrl}/api/admin/email-settings`, { headers: { cookie } }).then((response) => response.json());
   assert.equal(initial.configured, false, 'começa sem SMTP configurado');
   assert.equal(initial.SMTP_PASS_SET, false);
-  assert.equal(initial.templates.length, 7, 'os sete modelos revisados são carregados');
+  assert.equal(initial.templates.length, 8, 'os modelos revisados são carregados');
   assert.ok(initial.templates.every((template) => template.variables.length), 'cada modelo declara suas variáveis');
   assert.ok(!('SMTP_PASS' in initial), 'a senha nunca é devolvida pela API');
 

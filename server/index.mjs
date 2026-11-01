@@ -145,6 +145,13 @@ if (Number(get('SELECT COUNT(*) AS count FROM email_templates')?.count || 0) ===
   }
   persistDatabase();
 }
+// Instala novos modelos em bancos existentes sem sobrescrever edições da equipe.
+for (const template of emailTemplateDefaults) {
+  if (!get('SELECT key FROM email_templates WHERE key = ?', [template.key])) {
+    run('INSERT INTO email_templates (key, label, audience, subject, body, enabled, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?)', [template.key, template.label, template.audience, template.subject, template.body, nowIso()]);
+    persistDatabase();
+  }
+}
 // Falha na inicialização (variáveis inconsistentes) é intencional: o erro aparece nos logs do deploy.
 const bootstrapResult = ensureBootstrapAdmin();
 if (bootstrapResult === 'created') console.log('Administrador inicial criado a partir de ADMIN_BOOTSTRAP_EMAIL.');
@@ -322,16 +329,21 @@ function getSession(req) {
     return null;
   }
   // Uma conta desativada perde o acesso imediatamente, mesmo com sessão aberta.
-  const account = get('SELECT name, active FROM admin_users WHERE id = ?', [session.userId]);
+  const account = get('SELECT name, active, role FROM admin_users WHERE id = ?', [session.userId]);
   if (!account || !Number(account.active)) {
     sessions.delete(key);
     return null;
   }
-  return { key, ...session, name: account.name || session.name || '' };
+  return { key, ...session, name: account.name || session.name || '', role: account.role };
 }
 function requireAdmin(req, res, next) {
   const session = getSession(req);
   if (!session) return res.status(401).json({ error: 'Sua sessão expirou. Entre novamente.' });
+  const path = req.path;
+  const common = path === '/api/admin/logout' || path === '/api/admin/security' || path.startsWith('/api/admin/security/');
+  const recruitment = /^\/api\/admin\/(jobs|applications|talent|files)(\/|$)/.test(path) || /^\/api\/admin\/export\/(jobs|applications|talent)$/.test(path);
+  const content = /^\/api\/admin\/(articles|hero-slides)(\/|$)/.test(path);
+  if (!(session.role === 'admin' || common || (session.role === 'recruitment' && recruitment) || (session.role === 'content' && content))) return res.status(403).json({ error: 'Sua conta não tem permissão para acessar esta área.' });
   req.adminSession = session;
   next();
 }
@@ -502,7 +514,7 @@ function articleToPublic(row) {
 }
 function adminUserToPublic(row) {
   if (!row) return null;
-  return { id: row.id, email: row.email, name: row.name || '', active: Boolean(Number(row.active)), totp_enabled: Boolean(Number(row.totp_enabled ?? 0)), created_at: row.created_at, updated_at: row.updated_at || '', last_login_at: row.last_login_at || '' };
+  return { id: row.id, email: row.email, name: row.name || '', role: row.role, active: Boolean(Number(row.active)), totp_enabled: Boolean(Number(row.totp_enabled ?? 0)), created_at: row.created_at, updated_at: row.updated_at || '', last_login_at: row.last_login_at || '' };
 }
 const DEFAULT_HERO_IMAGE = '/images/hero-team.jpg';
 const templateVariables = new Map(emailTemplateDefaults.map((template) => [template.key, template.variables || []]));
@@ -815,11 +827,11 @@ function academicErrors(academic) {
   return errors;
 }
 function candidateProfile(userId) {
-  return get(`SELECT p.id, p.full_name, p.email, p.phone, p.city, p.state, p.area, p.linkedin, p.education_course, p.education_institution, p.education_period, p.education_shift, p.education_completion, p.resume_key, p.photo_key, p.updated_at
+  return get(`SELECT p.id, p.full_name, p.email, p.phone, p.city, p.state, p.area, p.linkedin, p.education_course, p.education_institution, p.education_period, p.education_shift, p.education_completion, p.resume_key, p.photo_key, p.updated_at, a.status_notifications
     FROM candidate_accounts a JOIN talent_profiles p ON p.id = a.profile_id WHERE a.id = ?`, [userId]);
 }
 function publicCandidateProfile(profile) {
-  return { full_name: profile.full_name, email: profile.email, phone: profile.phone, city: profile.city, state: profile.state, area: profile.area, linkedin: profile.linkedin || '', ...Object.fromEntries(academicFields.map(key => [key, profile[key] || ''])), has_resume: !!profile.resume_key, has_photo: !!profile.photo_key, updated_at: profile.updated_at };
+  return { full_name: profile.full_name, email: profile.email, phone: profile.phone, city: profile.city, state: profile.state, area: profile.area, linkedin: profile.linkedin || '', ...Object.fromEntries(academicFields.map(key => [key, profile[key] || ''])), has_resume: !!profile.resume_key, has_photo: !!profile.photo_key, status_notifications: Boolean(profile.status_notifications), updated_at: profile.updated_at };
 }
 function requireCandidateCsrf(req, res, next) {
   if (req.get('x-candidate-csrf') !== req.candidateSession.csrf) return res.status(403).json({ error: 'Não foi possível validar a sessão. Atualize a página e tente novamente.' });
@@ -830,6 +842,12 @@ app.get('/api/candidate/profile', requireCandidate, (req, res) => {
   if (!profile) return res.status(404).json({ error: 'Perfil não encontrado.' });
   res.set('Cache-Control', 'private, no-store');
   res.json({ profile: publicCandidateProfile(profile) });
+});
+app.put('/api/candidate/notification-preferences', requireCandidate, requireCandidateCsrf, (req, res) => {
+  if (typeof req.body?.status_notifications !== 'boolean') return res.status(400).json({ error: 'Informe uma preferência válida.' });
+  run('UPDATE candidate_accounts SET status_notifications = ? WHERE id = ?', [req.body.status_notifications ? 1 : 0, req.candidateSession.userId]);
+  persistDatabase();
+  res.set('Cache-Control', 'no-store'); res.json({ status_notifications: req.body.status_notifications });
 });
 app.get('/api/candidate/profile/resume', requireCandidate, (req, res) => {
   const profile = candidateProfile(req.candidateSession.userId);
@@ -1134,7 +1152,7 @@ app.post('/api/setup/initial-admin', initialAdminLimiter, (req, res) => {
 app.get('/api/admin/session', (req, res) => {
   const session = getSession(req);
   if (!session) return res.json({ authenticated: false });
-  res.json({ authenticated: true, csrf: session.csrf, user: { email: session.email, name: session.name || '' } });
+  res.json({ authenticated: true, csrf: session.csrf, user: { email: session.email, name: session.name || '', role: session.role } });
 });
 
 // Desafios de segundo fator ficam só na memória e valem por cinco minutos.
@@ -1148,13 +1166,13 @@ function openSession(res, user) {
   run('UPDATE admin_users SET last_login_at = ? WHERE id = ?', [nowIso(), user.id]);
   persistDatabase();
   res.cookie('im_admin', key, { httpOnly: true, secure: isProduction, sameSite: 'strict', path: '/', maxAge: 12 * 60 * 60 * 1000 });
-  return { authenticated: true, csrf, user: { email: user.email, name: user.name || '' } };
+  return { authenticated: true, csrf, user: { email: user.email, name: user.name || '', role: user.role } };
 }
 
 app.post('/api/admin/login', loginLimiter, (req, res) => {
   const email = asEmail(req.body?.email);
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  const user = get('SELECT id, email, name, salt, password_hash, active, totp_enabled FROM admin_users WHERE email = ?', [email]);
+  const user = get('SELECT id, email, name, salt, password_hash, active, totp_enabled, role FROM admin_users WHERE email = ?', [email]);
   const passwordOkay = user ? verifyPassword(password, user.salt, user.password_hash) : false;
   if (!user || !passwordOkay) return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
   if (!Number(user.active)) return res.status(403).json({ error: 'Esta conta administrativa está desativada. Procure quem gerencia os acessos do painel.' });
@@ -1175,7 +1193,7 @@ app.post('/api/admin/login/totp', loginLimiter, (req, res) => {
     mfaChallenges.delete(challenge);
     return res.status(401).json({ error: 'Esta verificação expirou. Entre novamente com e-mail e senha.' });
   }
-  const user = get('SELECT id, email, name, active, totp_secret, recovery_codes FROM admin_users WHERE id = ?', [pending.userId]);
+  const user = get('SELECT id, email, name, active, totp_secret, recovery_codes, role FROM admin_users WHERE id = ?', [pending.userId]);
   if (!user || !Number(user.active)) {
     mfaChallenges.delete(challenge);
     return res.status(403).json({ error: 'Esta conta administrativa está desativada. Procure quem gerencia os acessos do painel.' });
@@ -1427,8 +1445,8 @@ app.get('/api/admin/applications', requireAdmin, (req, res) => {
     FROM applications a JOIN jobs j ON j.id = a.job_id ${where} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
   res.json({ items, total, limit, offset });
 });
-app.put('/api/admin/applications/:id', requireAdmin, requireCsrf, (req, res) => {
-  const existing = get('SELECT id, status FROM applications WHERE id = ?', [asText(req.params.id, 64)]);
+app.put('/api/admin/applications/:id', requireAdmin, requireCsrf, async (req, res) => {
+  const existing = get('SELECT id, status, candidate_id, full_name, job_id FROM applications WHERE id = ?', [asText(req.params.id, 64)]);
   if (!existing) return res.status(404).json({ error: 'Candidatura não encontrada.' });
   const status = asText(req.body?.status, 80);
   if (!allowedApplicationStatuses.includes(status)) return res.status(400).json({ error: 'Status de candidatura inválido.' });
@@ -1436,7 +1454,16 @@ app.put('/api/admin/applications/:id', requireAdmin, requireCsrf, (req, res) => 
   run('UPDATE applications SET status = ?, internal_notes = ?, updated_at = ? WHERE id = ?', [status, asText(req.body?.internal_notes, 4000), updatedAt, existing.id]);
   if (status !== existing.status) run('INSERT INTO application_status_history (id, application_id, status, created_at) VALUES (?, ?, ?, ?)', [uuid(), existing.id, status, updatedAt]);
   audit(req, 'application.updated', 'application', existing.id, { status });
-  res.json({ ok: true });
+  let notification = 'not_requested';
+  if (status !== existing.status && existing.candidate_id) {
+    const account = get('SELECT email, status_notifications FROM candidate_accounts WHERE id = ?', [existing.candidate_id]);
+    const job = get('SELECT title FROM jobs WHERE id = ?', [existing.job_id]);
+    if (account?.status_notifications) {
+      const sent = await notify({ key: 'application_status_candidate', to: account.email, variables: { nome: existing.full_name, vaga: job?.title || 'sua vaga', status }, kind: 'candidate_status' });
+      notification = sent ? 'sent' : 'not_sent';
+    }
+  }
+  res.json({ ok: true, notification });
 });
 app.delete('/api/admin/applications/:id', requireAdmin, requireCsrf, (req, res) => {
   const existing = get('SELECT id, resume_key FROM applications WHERE id = ?', [asText(req.params.id, 64)]);
@@ -1530,7 +1557,7 @@ app.put('/api/admin/privacy-requests/:id', requireAdmin, requireCsrf, (req, res)
   audit(req, 'privacy_request.updated', 'privacy_request', existing.id, { status });
   res.json({ ok: true });
 });
-const adminUserColumns = 'id, email, name, active, totp_enabled, created_at, updated_at, last_login_at';
+const adminUserColumns = 'id, email, name, role, active, totp_enabled, created_at, updated_at, last_login_at';
 app.get('/api/admin/users', requireAdmin, (req, res) => {
   const users = all(`SELECT ${adminUserColumns} FROM admin_users ORDER BY active DESC, created_at ASC`).map(adminUserToPublic);
   res.json({ items: users, current_user_id: req.adminSession.userId });
@@ -1544,15 +1571,17 @@ app.post('/api/admin/users', requireAdmin, requireCsrf, (req, res) => {
   if (!strongAdminPassword(password)) return res.status(400).json({ error: 'A senha deve ter ao menos 14 caracteres, com letras maiúsculas, minúsculas e números.' });
   if (get('SELECT id FROM admin_users WHERE email = ?', [email])) return res.status(409).json({ error: 'Já existe uma conta administrativa com este e-mail.' });
   const active = req.body?.active === undefined ? true : Boolean(req.body.active);
+  const role = req.body?.role ?? 'recruitment';
+  if (!['admin', 'recruitment', 'content'].includes(role)) return res.status(400).json({ error: 'Perfil de acesso inválido.' });
   const id = uuid(); const created = nowIso();
   const { salt, digest } = hashPassword(password);
-  run('INSERT INTO admin_users (id, email, name, salt, password_hash, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [id, email, name, salt, digest, active ? 1 : 0, created, created]);
+  run('INSERT INTO admin_users (id, email, name, salt, password_hash, active, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, email, name, salt, digest, active ? 1 : 0, role, created, created]);
   persistDatabase();
-  audit(req, 'admin_user.created', 'admin_user', id, { email, name, active });
+  audit(req, 'admin_user.created', 'admin_user', id, { email, name, active, role });
   res.status(201).json({ user: adminUserToPublic(get(`SELECT ${adminUserColumns} FROM admin_users WHERE id = ?`, [id])) });
 });
 app.put('/api/admin/users/:id', requireAdmin, requireCsrf, (req, res) => {
-  const existing = get('SELECT id, email, name, salt, password_hash, active FROM admin_users WHERE id = ?', [asText(req.params.id, 64)]);
+  const existing = get('SELECT id, email, name, salt, password_hash, active, role FROM admin_users WHERE id = ?', [asText(req.params.id, 64)]);
   if (!existing) return res.status(404).json({ error: 'Usuário não encontrado.' });
   // O nome só é obrigatório quando vem no corpo: alternar acesso de uma conta antiga (sem nome) não pode falhar.
   const name = asText(req.body?.name ?? existing.name, 160);
@@ -1560,9 +1589,12 @@ app.put('/api/admin/users/:id', requireAdmin, requireCsrf, (req, res) => {
   const wasActive = Boolean(Number(existing.active));
   const nextActive = req.body?.active === undefined ? wasActive : Boolean(req.body.active);
   const isSelf = existing.id === req.adminSession.userId;
+  const role = req.body?.role ?? existing.role;
+  if (!['admin', 'recruitment', 'content'].includes(role)) return res.status(400).json({ error: 'Perfil de acesso inválido.' });
+  if (isSelf && role !== 'admin') return res.status(409).json({ error: 'Você não pode reduzir sua própria permissão.' });
   if (isSelf && !nextActive) return res.status(409).json({ error: 'Você não pode desativar a sua própria conta. Peça a outra pessoa administradora.' });
-  if (wasActive && !nextActive) {
-    const otherActive = Number(get('SELECT COUNT(*) AS count FROM admin_users WHERE active = 1 AND id <> ?', [existing.id])?.count || 0);
+  if (wasActive && existing.role === 'admin' && (!nextActive || role !== 'admin')) {
+    const otherActive = Number(get("SELECT COUNT(*) AS count FROM admin_users WHERE active = 1 AND role = 'admin' AND id <> ?", [existing.id])?.count || 0);
     if (otherActive === 0) return res.status(409).json({ error: 'Mantenha ao menos uma conta administrativa ativa. Ative outra pessoa antes de desativar esta.' });
   }
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
@@ -1573,11 +1605,11 @@ app.put('/api/admin/users/:id', requireAdmin, requireCsrf, (req, res) => {
     const hashed = hashPassword(password);
     salt = hashed.salt; passwordHash = hashed.digest;
   }
-  run('UPDATE admin_users SET name=?, salt=?, password_hash=?, active=?, updated_at=? WHERE id=?', [name, salt, passwordHash, nextActive ? 1 : 0, nowIso(), existing.id]);
+  run('UPDATE admin_users SET name=?, salt=?, password_hash=?, active=?, role=?, updated_at=? WHERE id=?', [name, salt, passwordHash, nextActive ? 1 : 0, role, nowIso(), existing.id]);
   persistDatabase();
   if (!nextActive) for (const [key, session] of sessions) if (session.userId === existing.id) sessions.delete(key);
   const action = wasActive === nextActive ? (password ? 'admin_user.password_reset' : 'admin_user.updated') : (nextActive ? 'admin_user.activated' : 'admin_user.deactivated');
-  audit(req, action, 'admin_user', existing.id, { email: existing.email, name, active: nextActive, password_changed: Boolean(password) });
+  audit(req, action, 'admin_user', existing.id, { email: existing.email, name, active: nextActive, role, password_changed: Boolean(password) });
   // Troca de senha merece evento próprio na trilha, mesmo quando vem junto de outra alteração.
   if (password && action !== 'admin_user.password_reset') audit(req, 'admin_user.password_reset', 'admin_user', existing.id, { email: existing.email });
   res.json({ user: adminUserToPublic(get(`SELECT ${adminUserColumns} FROM admin_users WHERE id = ?`, [existing.id])) });

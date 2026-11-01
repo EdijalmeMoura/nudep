@@ -258,7 +258,19 @@ test('portal, applications, leads, talent, CMS and protected administration work
   const trackedBeforeStatus = await fetch(`${baseUrl}/api/candidate/applications`, { headers: { cookie: candidateCookie } }).then(r => r.json());
   const simpleCandidateItem = trackedBeforeStatus.items.find(item => item.title === 'Estágio de teste');
   assert.ok(simpleCandidateItem.updated_at); assert.equal(simpleCandidateItem.job_available, 1);
-  assert.equal((await putAdmin(`/api/admin/applications/${simpleCandidateItem.id}`, { status: 'Em análise', internal_notes: 'Interno' })).response.status, 200);
+  const preferencesUrl = `${baseUrl}/api/candidate/notification-preferences`;
+  const preferenceBody = JSON.stringify({ status_notifications: true });
+  assert.equal((await fetch(preferencesUrl, { method: 'PUT', headers: { cookie: candidateCookie, 'content-type': 'application/json' }, body: preferenceBody })).status, 403);
+  const preferenceHeaders = { cookie: candidateCookie, 'content-type': 'application/json', 'x-candidate-csrf': candidateCsrf };
+  assert.equal((await fetch(preferencesUrl, { method: 'PUT', headers: preferenceHeaders, body: preferenceBody })).status, 200);
+  const beforeNotice = messages.length;
+  const statusUpdate = await putAdmin(`/api/admin/applications/${simpleCandidateItem.id}`, { status: 'Em análise', internal_notes: 'Interno' });
+  assert.equal(statusUpdate.response.status, 200); assert.equal(statusUpdate.data.notification, 'sent');
+  assert.ok(messages.slice(beforeNotice).some(message => message.includes('talent@example.test') && message.includes('O status da sua candidatura')));
+  const unchanged = await putAdmin(`/api/admin/applications/${simpleCandidateItem.id}`, { status: 'Em análise', internal_notes: 'Outra nota' });
+  assert.equal(unchanged.data.notification, 'not_requested');
+  assert.equal((await fetch(preferencesUrl, { method: 'PUT', headers: preferenceHeaders, body: JSON.stringify({ status_notifications: false }) })).status, 200);
+
   const trackedAfterStatus = await fetch(`${baseUrl}/api/candidate/applications`, { headers: { cookie: candidateCookie } }).then(r => r.json());
   const statusItem = trackedAfterStatus.items.find(item => item.id === simpleCandidateItem.id);
   assert.deepEqual(statusItem.status_history.map(event => event.status), ['Em análise']);
@@ -475,6 +487,23 @@ test('o painel cria e desativa usuários administrativos', { timeout: 30_000 }, 
   assert.equal(newUser.data.user.name, 'Pessoa Recrutadora');
   const asNewUser = await fetch(`${baseUrl}/api/admin/jobs`, { headers: { cookie: newUser.cookie } });
   assert.equal(asNewUser.status, 200, 'a nova conta lê dados administrativos');
+  assert.equal(newUser.data.user.role, 'recruitment');
+  for (const path of ['/api/admin/users', '/api/admin/privacy-requests', '/api/admin/backup', '/api/admin/articles', '/api/admin/export/privacy', '/api/admin/dashboard']) assert.equal((await fetch(`${baseUrl}${path}`, { headers: { cookie: newUser.cookie } })).status, 403, path);
+  assert.equal((await fetch(`${baseUrl}/api/admin/applications`, { headers: { cookie: newUser.cookie } })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/admin/security`, { headers: { cookie: newUser.cookie } })).status, 200);
+  assert.equal((await putAdmin(`/api/admin/users/${listing.current_user_id}`, { role: 'content' })).response.status, 409, 'administrador não reduz sua própria permissão');
+  const contentUser = await postAdmin('/api/admin/users', { name: 'Pessoa Conteúdo', email: 'conteudo@example.test', password: strongPassword, role: 'content' });
+  assert.equal(contentUser.response.status, 201);
+  const contentLogin = await loginAs('conteudo@example.test', strongPassword);
+  assert.equal(contentLogin.data.user.role, 'content');
+  assert.equal((await fetch(`${baseUrl}/api/admin/articles`, { headers: { cookie: contentLogin.cookie } })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/admin/hero-slides`, { headers: { cookie: contentLogin.cookie } })).status, 200);
+  for (const path of ['/api/admin/jobs', '/api/admin/talent', '/api/admin/applications', '/api/admin/files/example', '/api/admin/backup', '/api/admin/users']) assert.equal((await fetch(`${baseUrl}${path}`, { headers: { cookie: contentLogin.cookie } })).status, 403, path);
+  assert.equal((await putAdmin(`/api/admin/users/${contentUser.data.user.id}`, { role: 'recruitment' })).response.status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/admin/articles`, { headers: { cookie: contentLogin.cookie } })).status, 403, 'alteração da permissão vale para sessão aberta');
+  assert.equal((await fetch(`${baseUrl}/api/admin/jobs`, { headers: { cookie: contentLogin.cookie } })).status, 200);
+  await putAdmin(`/api/admin/users/${contentUser.data.user.id}`, { active: false });
+
 
   assert.equal((await putAdmin(`/api/admin/users/${listing.current_user_id}`, { active: false })).response.status, 409, 'ninguém desativa a própria conta em uso');
 
