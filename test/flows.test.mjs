@@ -135,7 +135,7 @@ test('portal, applications, leads, talent, CMS and protected administration work
   applicationForm.set('job_slug', job.slug); applicationForm.set('full_name', 'Candidata de teste'); applicationForm.set('email', 'candidate@example.test');
   applicationForm.set('phone', '+55 81 98888-0000'); applicationForm.set('city', 'Recife'); applicationForm.set('state', 'PE');
   applicationForm.set('linkedin', ''); applicationForm.set('cover_letter', 'Apresentação de teste automatizado.'); applicationForm.set('website', '');
-  applicationForm.append('resume', new Blob(['%PDF-1.4\nIM Personnel test PDF'], { type: 'application/pdf' }), 'curriculo.pdf');
+  applicationForm.append('resume', new Blob(['%PDF-1.4\nNUDEP test PDF'], { type: 'application/pdf' }), 'curriculo.pdf');
   const applicationResponse = await fetch(`${baseUrl}/api/applications`, { method: 'POST', body: applicationForm });
   const application = await applicationResponse.json();
   assert.equal(applicationResponse.status, 201);
@@ -162,13 +162,13 @@ test('portal, applications, leads, talent, CMS and protected administration work
   talentForm.set('full_name', 'Talento de teste'); talentForm.set('email', 'talent@example.test'); talentForm.set('phone', '+55 81 97777-0000');
   talentForm.set('city', 'Recife'); talentForm.set('state', 'PE'); talentForm.set('area', 'Recursos Humanos'); talentForm.set('linkedin', ''); talentForm.set('website', '');
   talentForm.set('education_course', 'Administração'); talentForm.set('education_institution', 'Instituição teste'); talentForm.set('education_period', '4º período'); talentForm.set('education_shift', 'Noite'); talentForm.set('education_completion', '2028-12');
-  talentForm.append('resume', new Blob(['%PDF-1.4\nIM Personnel talent test'], { type: 'application/pdf' }), 'cv.pdf');
+  talentForm.append('resume', new Blob(['%PDF-1.4\nNUDEP talent test'], { type: 'application/pdf' }), 'cv.pdf');
   const withoutConsent = await fetch(`${baseUrl}/api/talent`, { method: 'POST', body: talentForm });
   assert.equal(withoutConsent.status, 400, 'talent bank requires explicit authorization');
   assert.match((await withoutConsent.json()).error, /autorizaçã/i, 'o erro identifica o campo de autorização');
   const consentForm = new FormData();
   for (const [key, value] of talentForm.entries()) if (key !== 'resume') consentForm.set(key, value);
-  consentForm.set('password', 'SenhaDeTeste12345'); consentForm.set('consent', 'true'); consentForm.append('resume', new Blob(['%PDF-1.4\nIM Personnel talent test'], { type: 'application/pdf' }), 'cv.pdf');
+  consentForm.set('password', 'SenhaDeTeste12345'); consentForm.set('consent', 'true'); consentForm.append('resume', new Blob(['%PDF-1.4\nNUDEP talent test'], { type: 'application/pdf' }), 'cv.pdf');
   consentForm.append('photo', new Blob([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')], { type: 'image/png' }), 'foto.png');
   const registered = await fetch(`${baseUrl}/api/talent`, { method: 'POST', body: consentForm });
   assert.equal(registered.status, 201);

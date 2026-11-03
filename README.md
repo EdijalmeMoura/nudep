@@ -1,6 +1,6 @@
-# IM Personnel Consultoria — site institucional e portal de oportunidades
+# NUDEP Consultoria — site institucional e portal de oportunidades
 
-Site institucional responsivo em português brasileiro para a IM Personnel, com portal de vagas, candidatura sem criação de conta, banco de talentos com autorização, formulário comercial/CRM e painel administrativo protegido.
+Site institucional responsivo em português brasileiro para a NUDEP, com portal de vagas, candidatura com ou sem conta, banco de talentos com autorização, formulário comercial/CRM e painel administrativo protegido.
 
 ## O que está incluído
 
@@ -27,7 +27,7 @@ Site institucional responsivo em português brasileiro para a IM Personnel, com 
 - **Imagens leves**: as fotos escolhidas no painel são reduzidas no próprio navegador (maior lado até 1920 px, WebP) antes do envio, e o painel informa a economia obtida.
 - Testes automatizados de integração para os fluxos do portal, do painel, da operação, da exportação e da segurança (20 casos, com integração contínua em `.github/workflows/ci.yml`).
 
-**Não há vagas, clientes, depoimentos, resultados ou certificações inventados.** O portal começa sem oportunidades até que uma vaga real seja cadastrada. O endereço, telefone, WhatsApp e e-mail públicos foram informados pela solicitante e são centralizados em `src/lib/contact.ts`; revise-os com a IM Personnel antes de qualquer alteração. O primeiro slide preserva a imagem existente e os demais usam novas imagens criadas por IA para este site.
+**Não há vagas, clientes, depoimentos, resultados ou certificações inventados.** O portal começa sem oportunidades até que uma vaga real seja cadastrada. O endereço, telefone, WhatsApp e e-mail públicos foram informados pela solicitante e são centralizados em `src/lib/contact.ts`; revise-os com a NUDEP antes de qualquer alteração. Os slides usam imagens criadas por IA e podem ser editados no painel.
 
 ## Requisitos
 
@@ -113,7 +113,7 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=usuario@seudominio.com.br
 SMTP_PASS=segredo
-EMAIL_FROM="IM Personnel <noreply@seudominio.com.br>"
+EMAIL_FROM="NUDEP <noreply@seudominio.com.br>"
 LEADS_NOTIFICATION_EMAIL=contato@seudominio.com.br
 SITE_URL=https://seudominio.com.br
 ```
@@ -221,7 +221,7 @@ As variáveis estão documentadas em `.env.example`:
 - `SMTP_*` e `EMAIL_FROM`: configuração de e-mail transacional.
 - `APP_SECRET`: chave de 32 bytes em hexadecimal que cifra a senha do SMTP gravada pelo painel. Sem ela, o painel avisa que a senha está em texto puro no arquivo do banco.
 - `FORM_RATE_LIMIT` e `LOGIN_RATE_LIMIT`: opcionais, ajustam os limites por IP a cada 15 minutos (padrões 6 e 8).
-- `APPLICATION_RETENTION_DAYS`, `TALENT_RETENTION_DAYS`, `LEAD_RETENTION_DAYS`, `PRIVACY_REQUEST_RETENTION_DAYS` e `AUDIT_RETENTION_DAYS`: prazos em dias definidos pela IM Personnel.
+- `APPLICATION_RETENTION_DAYS`, `TALENT_RETENTION_DAYS`, `LEAD_RETENTION_DAYS`, `PRIVACY_REQUEST_RETENTION_DAYS` e `AUDIT_RETENTION_DAYS`: prazos em dias definidos pela NUDEP.
 
 **O servidor recusa inicialização com `NODE_ENV=production` se algum prazo de retenção estiver ausente ou inválido.** Os valores devem ser definidos e aprovados pela pessoa responsável por privacidade, não copiados sem análise. A rotina de descarte remove registros vencidos e currículos associados na inicialização e uma vez ao dia. Pedidos de exclusão/retirada de autorização também podem ser encaminhados manualmente no painel.
 
@@ -277,4 +277,4 @@ Para uma rotina automática, faça backup consistente do arquivo SQLite, de `pri
 5. Configurar prazos aprovados no ambiente de produção, HTTPS, domínio, backups, monitoramento e controles operacionais.
 6. Cadastrar vagas reais e revisar requisitos, benefícios, autorização de publicação, data de encerramento e aviso de privacidade aplicável.
 
-O conteúdo institucional foi produzido como base original de projeto; a aprovação da IM Personnel é necessária antes de tratá-lo como publicação final.
+O conteúdo institucional foi produzido como base original de projeto; a aprovação da NUDEP é necessária antes de tratá-lo como publicação final.

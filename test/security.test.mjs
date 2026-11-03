@@ -36,7 +36,7 @@ before(async () => {
       NODE_ENV: 'production',
       DATA_DIR: dataDir,
       PORT: String(port),
-      SITE_URL: 'https://impersonnel.com.br',
+      SITE_URL: 'https://nudep.com.br',
       APP_SECRET: crypto.randomBytes(32).toString('hex'),
       // A suíte faz mais entradas do que o limite de produção permite por IP.
       LOGIN_RATE_LIMIT: '60',
@@ -95,7 +95,7 @@ test('o gerador de códigos segue a RFC 6238 e o hash dos códigos de recuperaç
 test('a senha do SMTP é guardada cifrada e nunca volta em resposta ou auditoria', { timeout: 30_000 }, async () => {
   const saved = await putAdmin('/api/admin/email-settings', {
     SMTP_HOST: 'smtp.example.test', SMTP_PORT: '587', SMTP_SECURE: false,
-    SMTP_USER: 'contato@example.test', SMTP_PASS: smtpPassword, EMAIL_FROM: 'IM Personnel <contato@example.test>',
+    SMTP_USER: 'contato@example.test', SMTP_PASS: smtpPassword, EMAIL_FROM: 'NUDEP <contato@example.test>',
   });
   assert.equal(saved.response.status, 200);
   assert.equal(saved.data.SMTP_PASS_SET, true);
@@ -130,7 +130,7 @@ test('a verificação em duas etapas protege o acesso ao painel', { timeout: 40_
 
   const setup = await postAdmin('/api/admin/security/totp/setup', {});
   assert.equal(setup.response.status, 200);
-  assert.match(setup.data.uri, /^otpauth:\/\/totp\/IM%20Personnel%3Aadmin%40example\.test\?/, 'endereço pronto para o aplicativo autenticador');
+  assert.match(setup.data.uri, /^otpauth:\/\/totp\/NUDEP%3Aadmin%40example\.test\?/, 'endereço pronto para o aplicativo autenticador');
   assert.equal(setup.data.secret.length, 32);
 
   const wrong = await postAdmin('/api/admin/security/totp/enable', { code: '000000' });

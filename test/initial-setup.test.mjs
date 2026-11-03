@@ -23,7 +23,7 @@ before(async () => {
       NODE_ENV: 'production',
       DATA_DIR: dataDir,
       PORT: String(port),
-      SITE_URL: 'https://impersonnel.com.br',
+      SITE_URL: 'https://nudep.com.br',
       APPLICATION_RETENTION_DAYS: '365',
       TALENT_RETENTION_DAYS: '365',
       LEAD_RETENTION_DAYS: '365',

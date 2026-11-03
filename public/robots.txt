@@ -3,4 +3,4 @@ Allow: /
 Disallow: /admin
 Disallow: /api/
 
-Sitemap: https://impersonnel.com.br/sitemap.xml
+Sitemap: https://nudep.com.br/sitemap.xml

@@ -430,7 +430,7 @@ img { max-width: 100%; }
 .about-method-list p { margin: 0; color: #797979; font-size: 10px; }
 .about-method-list svg { color: #757575; }
 .about-final { position: relative; overflow: hidden; padding: 85px 0; color: white; background: #272727; }
-.about-final::after { content: 'IM'; position: absolute; right: 6%; bottom: -120px; color: rgba(255, 255, 255, .035); font-family: var(--serif); font-size: 400px; font-weight: 800; line-height: 1; letter-spacing: -.12em; }
+.about-final::after { content: 'NUDEP'; position: absolute; right: 6%; bottom: -60px; color: rgba(255, 255, 255, .035); font-family: var(--serif); font-size: clamp(100px, 20vw, 300px); font-weight: 800; line-height: 1; letter-spacing: -.12em; }
 .about-final-inner { position: relative; z-index: 1; }
 .about-final h2 { margin: 13px 0 21px; font-family: var(--serif); font-size: clamp(37px, 5vw, 58px); line-height: 1.1; font-weight: 500; letter-spacing: -.06em; }
 .about-final h2 em { color: var(--accent-soft); }
@@ -724,7 +724,7 @@ img { max-width: 100%; }
 .login-decoration::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 23% 80%, rgba(100, 100, 100, .22), transparent 42%), linear-gradient(135deg, rgba(36, 36, 36, .3), transparent); }
 .login-orbit { position: absolute; z-index: 1; top: 14%; right: -17%; width: 610px; height: 610px; border: 1px solid rgba(255, 255, 255, .12); border-radius: 50%; box-shadow: 0 0 0 50px rgba(255, 255, 255, .018), 0 0 0 118px rgba(255, 255, 255, .014); }
 .login-orbit-b { top: 27%; right: 7%; width: 330px; height: 330px; border-color: rgba(184, 184, 184, .24); box-shadow: none; }
-.login-watermark { position: absolute; z-index: 1; top: 31%; left: 54%; color: rgba(255, 255, 255, .06); font-family: var(--serif); font-size: 250px; font-weight: 800; letter-spacing: -.14em; }
+.login-watermark { position: absolute; z-index: 1; top: 31%; left: 36%; color: rgba(255, 255, 255, .06); font-family: var(--serif); font-size: clamp(90px, 15vw, 200px); font-weight: 800; letter-spacing: -.14em; }
 .login-decoration .brand, .login-editorial, .login-copyright { position: relative; z-index: 2; }
 .login-editorial { margin-top: auto; margin-bottom: 17vh; }
 .login-editorial h1 { margin: 14px 0; font-family: var(--serif); font-size: clamp(44px, 5vw, 65px); line-height: 1.06; font-weight: 500; letter-spacing: -.07em; }
@@ -1131,7 +1131,7 @@ img { max-width: 100%; }
   .admin-sidebar-brand { display: flex; align-items: center; justify-content: center; padding: 0 0 18px; }
   .admin-sidebar-brand .brand { gap: 0; }
   .admin-sidebar-brand .brand-logo-img, .admin-sidebar-brand .brand-fallback { display: none; }
-  .admin-sidebar-brand .brand::before { content: 'IM'; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; color: var(--dark); background: #ffffff; font-size: 12px; font-weight: 800; letter-spacing: -.07em; }
+  .admin-sidebar-brand .brand::before { content: 'NUDEP'; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; color: var(--dark); background: #ffffff; font-size: 12px; font-weight: 800; letter-spacing: -.07em; }
   .admin-panel-label, .admin-sidebar-heading, .admin-nav-link span, .admin-nav-arrow, .admin-user-chip > span:last-child, .admin-logout { display: none; }
   .admin-nav { margin-top: 18px; }
   .admin-nav-link { justify-content: center; width: 46px; height: 43px; padding: 0; }

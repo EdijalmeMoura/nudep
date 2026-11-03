@@ -35,7 +35,7 @@ before(async () => {
       NODE_ENV: 'production',
       DATA_DIR: dataDir,
       PORT: String(port),
-      SITE_URL: 'https://impersonnel.com.br',
+      SITE_URL: 'https://nudep.com.br',
       APPLICATION_RETENTION_DAYS: '365',
       TALENT_RETENTION_DAYS: '365',
       LEAD_RETENTION_DAYS: '365',
@@ -161,13 +161,13 @@ test('SMTP e modelos de mensagem são configuráveis pelo painel', { timeout: 30
   const invalidFrom = await putAdmin('/api/admin/email-settings', { EMAIL_FROM: 'não é um e-mail' });
   assert.equal(invalidFrom.response.status, 400);
 
-  const saved = await putAdmin('/api/admin/email-settings', { SMTP_HOST: 'smtp.example.test', SMTP_PORT: '465', SMTP_SECURE: true, SMTP_USER: 'contato@example.test', SMTP_PASS: 'SegredoSmtp123', EMAIL_FROM: 'IM Personnel <contato@example.test>', LEADS_NOTIFICATION_EMAIL: 'equipe@example.test' });
+  const saved = await putAdmin('/api/admin/email-settings', { SMTP_HOST: 'smtp.example.test', SMTP_PORT: '465', SMTP_SECURE: true, SMTP_USER: 'contato@example.test', SMTP_PASS: 'SegredoSmtp123', EMAIL_FROM: 'NUDEP <contato@example.test>', LEADS_NOTIFICATION_EMAIL: 'equipe@example.test' });
   assert.equal(saved.response.status, 200);
   assert.equal(saved.data.configured, true, 'com host e remetente o e-mail passa a estar ativo');
   const afterSave = await fetch(`${baseUrl}/api/admin/email-settings`, { headers: { cookie } }).then((response) => response.json());
   assert.equal(afterSave.SMTP_PASS_SET, true);
   assert.equal(afterSave.SMTP_SECURE, true);
-  assert.equal(afterSave.EMAIL_FROM, 'IM Personnel <contato@example.test>');
+  assert.equal(afterSave.EMAIL_FROM, 'NUDEP <contato@example.test>');
   assert.ok(afterSave.stored_in_panel.includes('SMTP_HOST'), 'o painel informa o que foi definido nele');
   assert.ok(!JSON.stringify(afterSave).includes('SegredoSmtp123'), 'a senha não aparece em nenhuma resposta');
 

@@ -64,7 +64,7 @@ export function verifyTotp(secret, token, { window = 1 } = {}) {
   return false;
 }
 
-export function otpauthUri({ secret, email, issuer = 'IM Personnel' }) {
+export function otpauthUri({ secret, email, issuer = 'NUDEP' }) {
   const label = `${issuer}:${email}`;
   const params = new URLSearchParams({ secret, issuer, algorithm: 'SHA1', digits: String(DIGITS), period: String(PERIOD_SECONDS) });
   return `otpauth://totp/${encodeURIComponent(label)}?${params.toString()}`;

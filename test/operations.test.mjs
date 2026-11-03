@@ -61,7 +61,7 @@ before(async () => {
       NODE_ENV: 'production',
       DATA_DIR: dataDir,
       PORT: String(port),
-      SITE_URL: 'https://impersonnel.com.br',
+      SITE_URL: 'https://nudep.com.br',
       APPLICATION_RETENTION_DAYS: '3650',
       TALENT_RETENTION_DAYS: '3650',
       LEAD_RETENTION_DAYS: '3650',
@@ -155,7 +155,7 @@ test('falha de envio de e-mail fica registrada e visível no painel', { timeout:
   // Host inexistente: a configuração fica válida para o painel, mas a conexão falha de propósito.
   const saved = await putAdmin('/api/admin/email-settings', {
     SMTP_HOST: 'smtp.inexistente.test', SMTP_PORT: '587', SMTP_SECURE: false,
-    SMTP_USER: 'contato@example.test', SMTP_PASS: smtpPassword, EMAIL_FROM: 'IM Personnel <contato@example.test>',
+    SMTP_USER: 'contato@example.test', SMTP_PASS: smtpPassword, EMAIL_FROM: 'NUDEP <contato@example.test>',
     LEADS_NOTIFICATION_EMAIL: 'equipe@example.test',
   });
   assert.equal(saved.response.status, 200);
@@ -237,7 +237,7 @@ test('a equipe baixa os dados em CSV e o backup completo em ZIP', { timeout: 30_
   const backup = await fetch(`${baseUrl}/api/admin/backup`, { headers: { cookie } });
   assert.equal(backup.status, 200);
   assert.equal(backup.headers.get('content-type'), 'application/zip');
-  assert.match(backup.headers.get('content-disposition'), /attachment; filename="backup-im-personnel-\d{4}-\d{2}-\d{2}\.zip"/);
+  assert.match(backup.headers.get('content-disposition'), /attachment; filename="backup-nudep-\d{4}-\d{2}-\d{2}\.zip"/);
   const zip = Buffer.from(await backup.arrayBuffer());
   assert.equal(zip.subarray(0, 4).toString('hex'), '504b0304', 'assinatura de arquivo ZIP');
   const names = zipEntryNames(zip);
@@ -259,11 +259,11 @@ test('a equipe baixa os dados em CSV e o backup completo em ZIP', { timeout: 30_
 
 test('vagas e conteúdos têm prévia própria para compartilhamento', { timeout: 30_000 }, async () => {
   const job = await fetch(`${baseUrl}/vagas/vaga-de-teste`).then((response) => response.text());
-  assert.match(job, /<meta property="og:title" content="Vaga de teste em Recife, PE \| IM Personnel" \/>/, 'o cargo e a cidade aparecem na prévia');
-  assert.match(job, /<title>Vaga de teste em Recife, PE \| IM Personnel<\/title>/, 'o título do documento muda por rota');
-  assert.match(job, /<meta property="og:url" content="https:\/\/impersonnel\.com\.br\/vagas\/vaga-de-teste" \/>/);
-  assert.match(job, /<meta property="og:image" content="https:\/\/impersonnel\.com\.br\/images\/hero-team\.jpg" \/>/, 'a imagem da prévia é um endereço absoluto');
-  assert.match(job, /<link rel="canonical" href="https:\/\/impersonnel\.com\.br\/vagas\/vaga-de-teste" \/>/);
+  assert.match(job, /<meta property="og:title" content="Vaga de teste em Recife, PE \| NUDEP" \/>/, 'o cargo e a cidade aparecem na prévia');
+  assert.match(job, /<title>Vaga de teste em Recife, PE \| NUDEP<\/title>/, 'o título do documento muda por rota');
+  assert.match(job, /<meta property="og:url" content="https:\/\/nudep\.com\.br\/vagas\/vaga-de-teste" \/>/);
+  assert.match(job, /<meta property="og:image" content="https:\/\/nudep\.com\.br\/images\/hero-team\.jpg" \/>/, 'a imagem da prévia é um endereço absoluto');
+  assert.match(job, /<link rel="canonical" href="https:\/\/nudep\.com\.br\/vagas\/vaga-de-teste" \/>/);
   assert.doesNotMatch(job, /<meta name="robots" content="noindex/, 'vaga publicada continua indexável');
 
   // O slug vem da própria API: os artigos revisados são carregados pelo servidor na primeira execução.
@@ -271,18 +271,18 @@ test('vagas e conteúdos têm prévia própria para compartilhamento', { timeout
   const firstArticle = published.items[0];
   const article = await fetch(`${baseUrl}/conteudos/${firstArticle.slug}`).then((response) => response.text());
   assert.match(article, /<meta property="og:type" content="article" \/>/);
-  assert.ok(article.includes(`<title>${firstArticle.title} | IM Personnel</title>`), 'o título do artigo entra na prévia');
-  assert.match(article, /<meta property="og:image" content="https:\/\/impersonnel\.com\.br\/images\/hero-team\.jpg" \/>/, 'sem capa própria, o artigo usa a imagem padrão');
+  assert.ok(article.includes(`<title>${firstArticle.title} | NUDEP</title>`), 'o título do artigo entra na prévia');
+  assert.match(article, /<meta property="og:image" content="https:\/\/nudep\.com\.br\/images\/hero-team\.jpg" \/>/, 'sem capa própria, o artigo usa a imagem padrão');
 
   const missing = await fetch(`${baseUrl}/vagas/vaga-que-nao-existe`).then((response) => response.text());
   assert.match(missing, /<meta name="robots" content="noindex, follow" \/>/, 'página de vaga inexistente não é indexada');
 
   const admin = await fetch(`${baseUrl}/admin/dashboard`).then((response) => response.text());
   assert.match(admin, /<meta name="robots" content="noindex, nofollow" \/>/, 'o painel nunca é indexado');
-  assert.match(admin, /<title>IM Personnel/, 'o painel mantém o título da marca');
+  assert.match(admin, /<title>NUDEP/, 'o painel mantém o título da marca');
 
   const home = await fetch(`${baseUrl}/`).then((response) => response.text());
-  assert.match(home, /<link rel="canonical" href="https:\/\/impersonnel\.com\.br\/" \/>/);
+  assert.match(home, /<link rel="canonical" href="https:\/\/nudep\.com\.br\/" \/>/);
   assert.ok(home.includes('id="root"'), 'o HTML entregue continua sendo o da aplicação');
 });
 

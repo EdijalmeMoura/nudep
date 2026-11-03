@@ -176,7 +176,7 @@ app.use(helmet({
       fontSrc: ["'self'", 'data:'],
       formAction: ["'self'"],
       frameAncestors: isProduction ? ["'none'"] : ["'self'", 'https://*.e2b.app'],
-      imgSrc: ["'self'", 'https://impersonnel.com.br', 'data:', 'blob:'],
+      imgSrc: ["'self'", 'https://nudep.com.br', 'data:', 'blob:'],
       objectSrc: ["'none'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
@@ -372,13 +372,13 @@ const defaultShareImage = () => `${siteOrigin()}/images/hero-team.jpg`;
 
 function seoBlockFor(pathname) {
   const origin = siteOrigin();
-  const title = 'IM Personnel | Pessoas certas transformam negócios';
-  const description = 'Recrutamento, seleção e soluções estratégicas em Recursos Humanos, com sede em Recife, Pernambuco.';
+  const title = 'NUDEP | Estágio e desenvolvimento profissional';
+  const description = 'A NUDEP conecta estudantes, empresas e instituições de ensino a oportunidades de estágio e desenvolvimento profissional.';
   const canonical = `${origin}${pathname === '/' ? '/' : pathname.replace(/\/$/, '')}`;
   let heading = title;
   let summary = description;
   let image = defaultShareImage();
-  let imageAlt = 'Equipe da IM Personnel em ambiente de trabalho';
+  let imageAlt = 'Equipe da NUDEP em ambiente de trabalho';
   let type = 'website';
   let robots = 'index, follow';
 
@@ -388,7 +388,7 @@ function seoBlockFor(pathname) {
     type = 'article';
     const row = get('SELECT title, city, state, modality, employment_type, summary FROM jobs WHERE slug = ? AND published = 1 AND (expires_at IS NULL OR expires_at >= ?)', [asText(job[1], 110), activeDateFilter()]);
     if (row) {
-      heading = `${row.title} em ${row.city}, ${row.state} | IM Personnel`;
+      heading = `${row.title} em ${row.city}, ${row.state} | NUDEP`;
       summary = [row.summary, `${row.modality} · ${row.employment_type}`].filter(Boolean).join(' ');
     } else {
       robots = 'noindex, follow';
@@ -397,21 +397,21 @@ function seoBlockFor(pathname) {
     type = 'article';
     const row = get('SELECT title, intro, category, image_key FROM articles WHERE slug = ? AND published = 1', [asText(article[1], 120)]);
     if (row) {
-      heading = `${row.title} | IM Personnel`;
+      heading = `${row.title} | NUDEP`;
       summary = row.intro;
       if (row.image_key) { image = `${origin}/media/content-images/${encodeURIComponent(row.image_key)}`; imageAlt = row.title; }
     } else {
       robots = 'noindex, follow';
     }
   } else if (pathname === '/vagas') {
-    heading = 'Vagas abertas | IM Personnel';
+    heading = 'Vagas abertas | NUDEP';
     const total = Number(get('SELECT COUNT(*) AS count FROM jobs WHERE published = 1 AND (expires_at IS NULL OR expires_at >= ?)', [activeDateFilter()])?.count || 0);
     summary = total === 1
-      ? 'Uma oportunidade aberta agora. Recrutamento conduzido pela IM Personnel em Recife e região.'
-      : `${total} oportunidades abertas agora. Recrutamento conduzido pela IM Personnel em Recife e região.`;
+      ? 'Uma oportunidade aberta agora. Recrutamento conduzido pela NUDEP em Recife e região.'
+      : `${total} oportunidades abertas agora. Recrutamento conduzido pela NUDEP em Recife e região.`;
   } else if (pathname === '/conteudos') {
-    heading = 'Conteúdos | IM Personnel';
-    summary = 'Artigos sobre recrutamento, seleção, liderança e gestão de pessoas escritos pela equipe da IM Personnel.';
+    heading = 'Conteúdos | NUDEP';
+    summary = 'Artigos sobre recrutamento, seleção, liderança e gestão de pessoas escritos pela equipe da NUDEP.';
   } else if (pathname === '/404' || pathname.startsWith('/admin') || pathname.startsWith('/configuracao-inicial')) {
     robots = 'noindex, nofollow';
   }
@@ -421,7 +421,7 @@ function seoBlockFor(pathname) {
     `<meta name="description" content="${escapeHtmlAttribute(summary)}" />`,
     `<meta property="og:type" content="${type}" />`,
     '<meta property="og:locale" content="pt_BR" />',
-    '<meta property="og:site_name" content="IM Personnel" />',
+    '<meta property="og:site_name" content="NUDEP" />',
     `<meta property="og:title" content="${escapeHtmlAttribute(heading)}" />`,
     `<meta property="og:description" content="${escapeHtmlAttribute(summary)}" />`,
     `<meta property="og:url" content="${escapeHtmlAttribute(canonical)}" />`,
@@ -1049,7 +1049,7 @@ app.post('/api/applications', applicationLimiter, upload.single('resume'), async
     const notification = emailSettings().notification;
     if (notification) notify({ key: 'application_team', to: notification, replyTo: email, variables });
   }
-  res.status(201).json({ ok: true, reference: ref, message: 'Sua candidatura foi recebida. Obrigado por compartilhar seu perfil com a IM Personnel.' });
+  res.status(201).json({ ok: true, reference: ref, message: 'Sua candidatura foi recebida. Obrigado por compartilhar seu perfil com a NUDEP.' });
 });
 
 app.post('/api/talent', talentLimiter, talentUpload.fields([{ name: 'resume', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), async (req, res) => {
@@ -1785,7 +1785,7 @@ app.get('/api/admin/backup', requireAdmin, (req, res, next) => {
     const imageFiles = folderEntries(contentImagesPath, 'imagens/', { skip: new Set(['.gitkeep']) });
     const counts = Object.fromEntries(['jobs', 'articles', 'applications', 'talent_profiles', 'leads', 'privacy_requests', 'admin_users', 'hero_slides', 'email_templates', 'audit_log'].map((table) => [table, Number(get(`SELECT COUNT(*) AS count FROM ${table}`)?.count || 0)]));
     const manifest = [
-      'BACKUP DO SITE IM PERSONNEL',
+      'BACKUP DO SITE NUDEP',
       `Gerado em: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
       `Banco: ${path.basename(databaseFilePath())} (${databaseBytes(databaseBuffer.length)})`,
       '',
@@ -1815,7 +1815,7 @@ app.get('/api/admin/backup', requireAdmin, (req, res, next) => {
     ];
     audit(req, 'backup.downloaded', 'backup', activeDateFilter(), { records: counts, files: resumeFiles.length + imageFiles.length, database_bytes: databaseBuffer.length });
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="backup-im-personnel-${activeDateFilter()}.zip"`);
+    res.setHeader('Content-Disposition', `attachment; filename="backup-nudep-${activeDateFilter()}.zip"`);
     res.setHeader('Cache-Control', 'no-store');
     for (const chunk of buildZip(entries)) res.write(chunk);
     res.end();
@@ -1936,7 +1936,7 @@ app.put('/api/admin/email-settings', requireAdmin, requireCsrf, (req, res) => {
       if (!/^\d{1,5}$/.test(value) || port < 1 || port > 65535) return res.status(400).json({ error: 'A porta SMTP deve ser um número entre 1 e 65535.' });
     }
     if (key === 'SMTP_SECURE') value = asBoolean(value) ? 'true' : 'false';
-    if (key === 'EMAIL_FROM' && value && !/^[^@\s]+@[^@\s]+$/.test(value.replace(/^[^<]*<([^>]*)>$/, '$1'))) return res.status(400).json({ error: 'Informe um remetente válido, como IM Personnel <contato@dominio.com.br>.' });
+    if (key === 'EMAIL_FROM' && value && !/^[^@\s]+@[^@\s]+$/.test(value.replace(/^[^<]*<([^>]*)>$/, '$1'))) return res.status(400).json({ error: 'Informe um remetente válido, como NUDEP <contato@dominio.com.br>.' });
     if (key === 'LEADS_NOTIFICATION_EMAIL' && value && !validEmail(value)) return res.status(400).json({ error: 'Informe um e-mail válido para receber os avisos da equipe.' });
     // A senha do SMTP sai do painel protegida, com a chave derivada de APP_SECRET.
     setSetting(key, key === 'SMTP_PASS' ? protectSecret(value) : value);
@@ -2074,6 +2074,6 @@ if (isProduction) {
 
 const port = Number(process.env.PORT || 5173);
 app.listen(port, '0.0.0.0', () => {
-  console.log(`IM Personnel web app listening on 0.0.0.0:${port} (${isProduction ? 'production' : 'development'})`);
+  console.log(`NUDEP web app listening on 0.0.0.0:${port} (${isProduction ? 'production' : 'development'})`);
   console.log(`SQLite database: ${databaseFilePath()}`);
 });

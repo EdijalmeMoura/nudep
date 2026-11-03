@@ -14,7 +14,7 @@ export function ServiceDetail() {
   return <main>
     <PageIntro eyebrow={service.eyebrow} title={service.title} text={service.intro} current={service.title} />
     <section className="service-detail-intro section-pad"><div className="container service-detail-grid">
-      <div className="service-detail-symbol"><ServiceIcon service={service} size={34} /><span>IM / SOLUÇÕES</span></div>
+      <div className="service-detail-symbol"><ServiceIcon service={service} size={34} /><span>NUDEP / SOLUÇÕES</span></div>
       <div className="service-detail-copy"><span className="eyebrow">O DESAFIO QUE NOS MOVE</span><h2>{service.challenge}</h2><p>{service.solution}</p><Link className="text-link" to={contact}>Conte sobre sua necessidade <ArrowUpRight size={17} /></Link></div>
     </div></section>
     <section className="service-benefits"><div className="container service-benefits-grid"><div className="service-benefits-heading"><span className="eyebrow eyebrow-light">UMA SOLUÇÃO ADAPTADA AO SEU CONTEXTO</span><h2>O que pode fazer<br />a diferença.</h2><p>As prioridades são definidas em conjunto. A atuação considera o momento da organização e os critérios acordados.</p><Link to={contact} className="button button-outline-white">Conversar com especialista <ArrowUpRight size={16} /></Link></div><div className="service-benefit-list">{service.benefits.map((benefit, index) => <div className="service-benefit" key={benefit}><span>0{index + 1}</span><p>{benefit}</p><Check size={17} /></div>)}</div></div></section>
