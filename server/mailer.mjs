@@ -48,6 +48,9 @@ function getTransporter() {
       host: config.host,
       port: config.port,
       secure: config.secure,
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 30000,
       auth: config.user ? { user: config.user, pass: config.pass || '' } : undefined,
     });
     transporterSignature = signature;

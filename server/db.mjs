@@ -213,6 +213,18 @@ export async function initializeDatabase() {
       updated_at TEXT NOT NULL DEFAULT ''
     );
 
+    CREATE TABLE IF NOT EXISTS email_queue (
+      id TEXT PRIMARY KEY,
+      template_key TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      recipient TEXT NOT NULL,
+      variables TEXT NOT NULL,
+      reply_to TEXT NOT NULL DEFAULT '',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS email_queue_due_idx ON email_queue(next_attempt_at);
     CREATE TABLE IF NOT EXISTS email_events (
       id TEXT PRIMARY KEY,
       template_key TEXT NOT NULL DEFAULT '',
@@ -250,6 +262,8 @@ export async function initializeDatabase() {
     ['privacy_requests', 'internal_notes', "TEXT NOT NULL DEFAULT ''"],
     ['articles', 'image_key', "TEXT NOT NULL DEFAULT ''"],
     ['articles', 'image_alt', "TEXT NOT NULL DEFAULT ''"],
+    ['email_events', 'duration_ms', 'INTEGER'],
+    ['email_events', 'queued_at', "TEXT NOT NULL DEFAULT ''"],
     ['admin_users', 'name', "TEXT NOT NULL DEFAULT ''"],
     ['admin_users', 'active', 'INTEGER NOT NULL DEFAULT 1'],
     ['admin_users', 'role', "TEXT NOT NULL DEFAULT 'admin'"],

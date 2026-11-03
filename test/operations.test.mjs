@@ -172,11 +172,15 @@ test('falha de envio de e-mail fica registrada e visível no painel', { timeout:
   assert.ok(failure, 'a tentativa de envio que falhou aparece no histórico do painel');
   assert.ok(failure.recipient.includes('titular.teste@example.test'), 'o histórico guarda o destinatário');
   assert.ok(failure.detail.length > 0, 'o motivo da falha é registrado para diagnóstico');
+  assert.ok(failure.queued_at, 'o horário da solicitação é preservado');
+  assert.ok(Number.isInteger(failure.duration_ms) && failure.duration_ms >= 0, 'duração SMTP é registrada');
+  assert.match(failure.detail, /nova tentativa agendada/);
   assert.ok(!failure.detail.includes(smtpPassword), 'a senha do SMTP nunca aparece no detalhe da falha');
 
   const health = (await adminGet('/api/admin/email-settings')).health;
   assert.equal(health.attention, true, 'o painel passa a indicar que a entrega precisa de atenção');
   assert.ok(health.failures_24h >= 1);
+  assert.ok(health.queued >= 1, 'falha temporária permanece na fila para nova tentativa');
   assert.ok(!JSON.stringify(health).includes(smtpPassword), 'a senha não vaza pelo resumo de saúde');
 
   const dashboard = await adminGet('/api/admin/dashboard');

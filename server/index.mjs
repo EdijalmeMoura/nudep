@@ -455,28 +455,56 @@ function maskEmailError(message) {
   if (pass) text = text.split(pass).join('***');
   return text.slice(0, 300);
 }
-function recordEmailEvent({ templateKey = '', kind = 'notification', recipient = '', status, detail = '' }) {
+function recordEmailEvent({ templateKey = '', kind = 'notification', recipient = '', status, detail = '', durationMs = null, queuedAt = '' }) {
   try {
-    run('INSERT INTO email_events (id, template_key, kind, recipient, status, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [uuid(), templateKey, kind, recipient, status, detail, nowIso()]);
+    run('INSERT INTO email_events (id, template_key, kind, recipient, status, detail, created_at, duration_ms, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [uuid(), templateKey, kind, recipient, status, detail, nowIso(), durationMs, queuedAt]);
     run('DELETE FROM email_events WHERE id NOT IN (SELECT id FROM email_events ORDER BY created_at DESC LIMIT ?)', [EMAIL_EVENT_LIMIT]);
     persistDatabase();
   } catch { console.error('Não foi possível registrar o resultado de um envio de e-mail.'); }
 }
-// Envia um modelo e guarda o resultado. Nunca lança: o formulário responde mesmo se o e-mail falhar.
-async function notify({ key, to, variables = {}, replyTo, kind = 'notification' }) {
+// Notificações transacionais comuns são persistidas antes do processamento.
+// Links de segurança não entram na fila: seus tokens continuam sendo guardados apenas como hash.
+let emailWorkerBusy = false;
+function notify({ key, to, variables = {}, replyTo = '', kind = 'notification' }) {
   if (!to) { recordEmailEvent({ templateKey: key, kind, status: 'skipped', detail: 'sem destinatário' }); return false; }
   const template = readTemplate(key);
-  if (template && !template.enabled) { recordEmailEvent({ templateKey: key, kind, recipient: to, status: 'skipped', detail: 'modelo desativado no painel' }); return false; }
-  try {
-    const sent = await sendTemplate({ key, to, variables, replyTo });
-    recordEmailEvent({ templateKey: key, kind, recipient: to, status: sent ? 'sent' : 'skipped', detail: sent ? '' : 'modelo indisponível' });
-    return sent;
-  } catch (error) {
-    recordEmailEvent({ templateKey: key, kind, recipient: to, status: 'failed', detail: maskEmailError(error?.message || error) });
-    console.warn(`Falha ao enviar o e-mail "${key}".`);
-    return false;
-  }
+  if (!template || !template.enabled) { recordEmailEvent({ templateKey: key, kind, recipient: to, status: 'skipped', detail: 'modelo indisponível ou desativado' }); return false; }
+  const created = nowIso();
+  run('INSERT INTO email_queue (id, template_key, kind, recipient, variables, reply_to, next_attempt_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [uuid(), key, kind, to, JSON.stringify(variables), replyTo || '', created, created]);
+  persistDatabase();
+  setTimeout(() => { void processEmailQueue(); }, 0);
+  return true;
 }
+async function processEmailQueue() {
+  if (emailWorkerBusy) return;
+  emailWorkerBusy = true;
+  try {
+    for (let count = 0; count < 25; count++) {
+      const item = get('SELECT * FROM email_queue WHERE next_attempt_at <= ? ORDER BY created_at ASC LIMIT 1', [nowIso()]);
+      if (!item) break;
+      const started = Date.now();
+      try {
+        if (!isEmailConfigured()) throw new Error('SMTP não configurado');
+        const sent = await sendTemplate({ key: item.template_key, to: item.recipient, variables: JSON.parse(item.variables), replyTo: item.reply_to || undefined });
+        run('DELETE FROM email_queue WHERE id = ?', [item.id]);
+        recordEmailEvent({ templateKey: item.template_key, kind: item.kind, recipient: item.recipient, status: sent ? 'sent' : 'skipped', detail: sent ? '' : 'SMTP ou modelo indisponível', durationMs: Date.now() - started, queuedAt: item.created_at });
+      } catch (error) {
+        const attempts = Number(item.attempts) + 1;
+        const detail = maskEmailError(error?.message || error);
+        const code = Number(error?.responseCode || 0);
+        const retry = attempts < 4 && !(code >= 500 && code < 600);
+        if (retry) {
+          const next = new Date(Date.now() + [30000, 120000, 600000][attempts - 1]).toISOString();
+          run('UPDATE email_queue SET attempts = ?, next_attempt_at = ? WHERE id = ?', [attempts, next, item.id]);
+        } else run('DELETE FROM email_queue WHERE id = ?', [item.id]);
+        recordEmailEvent({ templateKey: item.template_key, kind: item.kind, recipient: item.recipient, status: 'failed', detail: `${detail}${retry ? ' — nova tentativa agendada' : ' — sem novas tentativas'}`, durationMs: Date.now() - started, queuedAt: item.created_at });
+      }
+    }
+  } finally { emailWorkerBusy = false; }
+}
+const emailQueueTimer = setInterval(() => { void processEmailQueue(); }, 10000);
+emailQueueTimer.unref();
+setTimeout(() => { void processEmailQueue(); }, 0);
 function emailHealth() {
   const configured = isEmailConfigured();
   const lastSuccess = get("SELECT created_at FROM email_events WHERE status = 'sent' ORDER BY created_at DESC LIMIT 1");
@@ -485,6 +513,7 @@ function emailHealth() {
   const failures24h = Number(get("SELECT COUNT(*) AS count FROM email_events WHERE status = 'failed' AND created_at >= ?", [since])?.count || 0);
   return {
     configured,
+    queued: Number(get('SELECT COUNT(*) AS count FROM email_queue')?.count || 0),
     notification_email: emailSettings().notification,
     last_success_at: lastSuccess?.created_at || '',
     last_failure_at: lastFailure?.created_at || '',
@@ -742,14 +771,15 @@ async function sendCandidateLink(account, purpose) {
   persistDatabase();
   const route = purpose === 'verify' ? '/confirmar-email' : '/redefinir-senha';
   const link = `${origin}${route}#token=${raw}`;
+  const started = Date.now();
   try {
     const sent = await sendMessage({ to: account.email, subject: purpose === 'verify' ? 'Confirme seu e-mail na NUDEP' : 'Redefina sua senha na NUDEP', text: purpose === 'verify' ? `Olá! Para confirmar seu e-mail e acessar sua conta NUDEP, abra este link:\n\n${link}\n\nO link é válido por 24 horas e pode ser usado uma vez. Se você não solicitou este cadastro, ignore esta mensagem.` : `Olá! Para redefinir sua senha na NUDEP, abra este link:\n\n${link}\n\nO link é válido por 30 minutos e pode ser usado uma vez. Se você não solicitou, ignore esta mensagem.` });
     if (!sent) throw new Error('Envio indisponível');
-    recordEmailEvent({ templateKey: `candidate_${purpose}`, kind: 'security', recipient: account.email, status: 'sent' });
+    recordEmailEvent({ templateKey: `candidate_${purpose}`, kind: 'security', recipient: account.email, status: 'sent', durationMs: Date.now() - started });
     return true;
   } catch (error) {
     run('DELETE FROM candidate_tokens WHERE token_hash = ?', [digest]); persistDatabase();
-    recordEmailEvent({ templateKey: `candidate_${purpose}`, kind: 'security', recipient: account.email, status: 'failed', detail: maskEmailError(error?.message || error).replace(/[a-f0-9]{64}/gi, '[redigido]') });
+    recordEmailEvent({ templateKey: `candidate_${purpose}`, kind: 'security', recipient: account.email, status: 'failed', detail: maskEmailError(error?.message || error).replace(/[a-f0-9]{64}/gi, '[redigido]'), durationMs: Date.now() - started });
     return false;
   }
 }
@@ -846,6 +876,7 @@ app.get('/api/candidate/profile', requireCandidate, (req, res) => {
 app.put('/api/candidate/notification-preferences', requireCandidate, requireCandidateCsrf, (req, res) => {
   if (typeof req.body?.status_notifications !== 'boolean') return res.status(400).json({ error: 'Informe uma preferência válida.' });
   run('UPDATE candidate_accounts SET status_notifications = ? WHERE id = ?', [req.body.status_notifications ? 1 : 0, req.candidateSession.userId]);
+  if (!req.body.status_notifications) run("DELETE FROM email_queue WHERE kind = 'candidate_status' AND recipient = ?", [req.candidateSession.account.email]);
   persistDatabase();
   res.set('Cache-Control', 'no-store'); res.json({ status_notifications: req.body.status_notifications });
 });
@@ -1459,8 +1490,8 @@ app.put('/api/admin/applications/:id', requireAdmin, requireCsrf, async (req, re
     const account = get('SELECT email, status_notifications FROM candidate_accounts WHERE id = ?', [existing.candidate_id]);
     const job = get('SELECT title FROM jobs WHERE id = ?', [existing.job_id]);
     if (account?.status_notifications) {
-      const sent = await notify({ key: 'application_status_candidate', to: account.email, variables: { nome: existing.full_name, vaga: job?.title || 'sua vaga', status }, kind: 'candidate_status' });
-      notification = sent ? 'sent' : 'not_sent';
+      const sent = notify({ key: 'application_status_candidate', to: account.email, variables: { nome: existing.full_name, vaga: job?.title || 'sua vaga', status }, kind: 'candidate_status' });
+      notification = sent ? 'queued' : 'not_sent';
     }
   }
   res.json({ ok: true, notification });
@@ -1888,7 +1919,7 @@ app.get('/api/admin/email-settings', requireAdmin, (_req, res) => {
     configured: isEmailConfigured(), stored_in_panel: storedInPanel,
     secrets_protected: isProtectedSecret(storedPass), encryption_available: encryptionAvailable(), pass_readable: Boolean(settings.pass),
     health: emailHealth(),
-    recent_events: all('SELECT id, template_key, kind, recipient, status, detail, created_at FROM email_events ORDER BY created_at DESC LIMIT 25'),
+    recent_events: all('SELECT id, template_key, kind, recipient, status, detail, created_at, duration_ms, queued_at FROM email_events ORDER BY created_at DESC LIMIT 25'),
     templates: all('SELECT key, label, audience, subject, body, enabled, updated_at FROM email_templates ORDER BY rowid ASC').map((row) => ({ ...row, enabled: Boolean(Number(row.enabled)), variables: templateVariables.get(row.key) || [] })),
   });
 });
@@ -1936,7 +1967,7 @@ app.post('/api/admin/email-settings/test', requireAdmin, requireCsrf, async (req
   if (!isEmailConfigured()) return res.status(400).json({ error: 'Configure o servidor SMTP e o remetente antes de testar.' });
   try {
     await verifyTransport();
-    const sent = await sendMessage({ to, subject: 'Teste de configuração de e-mail • IM Personnel', text: `Mensagem de teste enviada pelo painel administrativo em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long', timeStyle: 'short' }).format(new Date())}.\n\nSe você recebeu esta mensagem, o SMTP está configurado corretamente.` });
+    const sent = await sendMessage({ to, subject: 'Teste de configuração de e-mail • NUDEP', text: `Mensagem de teste enviada pelo painel administrativo em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long', timeStyle: 'short' }).format(new Date())}.\n\nSe você recebeu esta mensagem, o SMTP está configurado corretamente.` });
     recordEmailEvent({ kind: 'test', recipient: to, status: sent ? 'sent' : 'skipped', detail: sent ? '' : 'transporte indisponível' });
     audit(req, 'email_settings.test_sent', 'settings', 'email', { to });
     res.json({ ok: Boolean(sent), message: `Enviamos uma mensagem de teste para ${to}.` });

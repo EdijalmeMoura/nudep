@@ -265,7 +265,8 @@ test('portal, applications, leads, talent, CMS and protected administration work
   assert.equal((await fetch(preferencesUrl, { method: 'PUT', headers: preferenceHeaders, body: preferenceBody })).status, 200);
   const beforeNotice = messages.length;
   const statusUpdate = await putAdmin(`/api/admin/applications/${simpleCandidateItem.id}`, { status: 'Em análise', internal_notes: 'Interno' });
-  assert.equal(statusUpdate.response.status, 200); assert.equal(statusUpdate.data.notification, 'sent');
+  assert.equal(statusUpdate.response.status, 200); assert.equal(statusUpdate.data.notification, 'queued');
+  for (let i = 0; i < 100 && !messages.slice(beforeNotice).some(message => message.includes('talent@example.test') && message.includes('O status da sua candidatura')); i++) await new Promise(resolve => setTimeout(resolve, 50));
   assert.ok(messages.slice(beforeNotice).some(message => message.includes('talent@example.test') && message.includes('O status da sua candidatura')));
   const unchanged = await putAdmin(`/api/admin/applications/${simpleCandidateItem.id}`, { status: 'Em análise', internal_notes: 'Outra nota' });
   assert.equal(unchanged.data.notification, 'not_requested');
